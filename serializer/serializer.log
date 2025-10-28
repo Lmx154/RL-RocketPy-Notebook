@@ -1,0 +1,509 @@
+2025.Oct.27 23:30:32 - rocketserializer._helpers - INFO - Successfully extracted rocket.ork from "v-10-jose.ork" to "."
+2025.Oct.27 23:30:32 - rocketserializer._helpers - INFO - Successfully parsed .ork file at 'rocket.ork' with 12510 datapoints
+2025.Oct.27 23:30:32 - orhelper._orhelper - INFO - Starting JVM from C:\Users\Luis\.jdks\openjdk-23.0.1\bin\server\jvm.dll CLASSPATH=OpenRocket-23.09.jar
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Successfully initialized vectors with 4871 datapoints
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Initialized data vectors from the ORK file.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Collected motor geometry: motor length and motor radius.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - The motor dry mass is 3.405 kg.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - The total propellant mass is 4.659 kg. The motor dry mass is 3.405 kg.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Calculated motor mass properties.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Successfully configured the motor.
+                        grain_density: 1173.1466429429975
+                       grain_initial_inner_radius: 0.0245
+                       grain_outer_radius: 0.049
+                       grain_initial_height: 0.702
+                       nozzle_radius: 0.036750000000000005
+                       throat_radius: 0.0245
+                       dry_mass: 0
+                       dry_inertia: (0, 0, 0)
+                       center_of_dry_mass_position: 0
+                       grains_center_of_mass_position: 0
+                       grain_number: 1
+                       grain_separation: 0
+                       nozzle_position: -0.351
+                       coordinate_system_orientation: nozzle_to_combustion_chamber
+
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - The motor dry mass is 3.405 kg.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - The total propellant mass is 4.659 kg. The motor dry mass is 3.405 kg.
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Motor parameters retrieved.
+2025.Oct.27 23:30:36 - rocketserializer.components.id - INFO - Collected the rocket name: 'Jose's Rocket'
+2025.Oct.27 23:30:36 - rocketserializer.components.id - INFO - Collected the comment saved in the file: Its Joever
+2025.Oct.27 23:30:36 - rocketserializer.components.id - INFO - Collected the designer name: The Rocket Launchers
+2025.Oct.27 23:30:36 - rocketserializer.components.id - INFO - Identification information extracted.
+                        rocket_name: Jose's Rocket
+                       comment: Its Joever
+                       designer: The Rocket Launchers
+                       filepath: rocket.ork
+
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Metadata parameters retrieved.
+2025.Oct.27 23:30:36 - rocketserializer.components.environment - INFO - Collected first environment settings: latitude, longitude, elevation, wind_average, wind_turbulence, geodetic_method
+2025.Oct.27 23:30:36 - rocketserializer.components.environment - INFO - The base temperature was found in the .ork file. It is 305.372222 °C.
+2025.Oct.27 23:30:36 - rocketserializer.components.environment - INFO - The base pressure was found in the .ork file. It is 85597.589123 Pa.
+2025.Oct.27 23:30:36 - rocketserializer.components.environment - INFO - Successfully extracted all the environment settings.
+                        latitude: 28.61
+                       longitude: -80.6
+                       elevation: 1402.0800000000002
+                       wind_average: 2.0
+                       wind_turbulence: 0.1
+                       geodetic_method: spherical
+                       base_temperature: 305.37222222222226
+                       base_pressure: 85597.58912299939
+                       date: None
+
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Environment parameters retrieved.
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - The maximum radius of the rocket is: 0.077787
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - Collected rocket radius.
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - Collected rocket mass.
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - The moment of inertia of the rocket is: 21.424000 (longitudinal) and 0.115000 (rotational)
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - Collected rocket inertia.
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - Collected rocket center of mass.
+2025.Oct.27 23:30:36 - rocketserializer.components.rocket - INFO - All the Rocket information was collected:
+                       radius: 0.0777875
+                       mass: 28.271
+                       inertia: (0.115, 0.115, 21.424)
+                       center_of_mass_without_propellant: 1.476
+                       coordinate_system_orientation: nose_to_tail
+
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Rocket parameters retrieved.
+2025.Oct.27 23:30:36 - rocketserializer.components.flight - INFO - Collected launch conditions: launch rod length, launch rod angle, launch rod direction.
+2025.Oct.27 23:30:36 - rocketserializer.components.flight - INFO - Exported launch conditions.
+                       rail_length: 5.1816
+                       inclination: 90.0
+                       heading: 90.0
+
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Flight conditions retrieved.
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Jose's Rocket' of type 'Rocket'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Sustainer' of type 'AxialStage'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Nose cone' of type 'NoseCone'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Nosecone Tip & Mount' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Nose cone'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Nose cone'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Nose cone' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Body tube' of type 'BodyTube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Payload Bulkhead' of type 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Payload Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Payload Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Payload Bulkhead' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Payload' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'U-Bolt' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Shock cord (40ft) including linkages ' of type 'ShockCord'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Shock cord (40ft) including linkages '
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Shock cord (40ft) including linkages '
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Shock cord (40ft) including linkages ' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Main Parachute + Bag' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Bulkhead' of type 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Bulkhead' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Body tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Body tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Body tube' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Coupler Shoulder' of type 'BodyTube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Tube coupler' of type 'TubeCoupler'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Telemetry' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'U-Bolt' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'U-Bolt Aft' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Recovery Hardware' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Recovery disk' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Coupler Bulkhead FWD With charge wells' of type 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Coupler Bulkhead FWD With charge wells'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Coupler Bulkhead FWD With charge wells'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Coupler Bulkhead FWD With charge wells' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Coupler Bulkhead AFT With charge wells' of type 'Bulkhead'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Coupler Bulkhead AFT With charge wells'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Coupler Bulkhead AFT With charge wells'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Coupler Bulkhead AFT With charge wells' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Tube coupler'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Tube coupler'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Tube coupler' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Coupler Shoulder'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Coupler Shoulder'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Coupler Shoulder' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Body tube' of type 'BodyTube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Drogue' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Shock cord (35ft) Including Links' of type 'ShockCord'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Shock cord (35ft) Including Links'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Shock cord (35ft) Including Links'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Shock cord (35ft) Including Links' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Motor Casing Eye Bolt' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Inner Tube' of type 'InnerTube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Centering ring Forward' of type 'CenteringRing'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Centering ring Forward'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Centering ring Forward'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Centering ring Forward' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Centering ring' of type 'CenteringRing'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Centering ring'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Centering ring'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Centering ring' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Centering ring' of type 'CenteringRing'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Centering ring'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Centering ring'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Centering ring' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Inner Tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Inner Tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Inner Tube' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Launch lug Forward' of type 'LaunchLug'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Launch lug Forward'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Launch lug Forward'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Launch lug Forward' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Launch lug' of type 'LaunchLug'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Launch lug'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Launch lug'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Launch lug' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Freeform fin set' of type 'FreeformFinSet'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Freeform fin set'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Freeform fin set'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Freeform fin set' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Mass Component' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Body tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Body tube'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Body tube' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Starting to process element 'Transition' of type 'Transition'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Transition'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Transition'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Transition' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Sustainer'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Sustainer'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Child 'Sustainer' processed
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Moving to the next child
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - No more children for 'Jose's Rocket'
+2025.Oct.27 23:30:36 - rocketserializer.components.open_rocket_wrangler - INFO - Finished processing 'Jose's Rocket'
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - The elements are:
+                       360483413185319027: 
+                           type: Rocket
+                           name: Jose's Rocket
+                           length: 2.9472
+                           position: 0
+                       5763241418225294426: 
+                           type: AxialStage
+                           name: Sustainer
+                           length: 2.9472
+                           position: 2.9472
+                       5890885727343633602: 
+                           type: NoseCone
+                           name: Nose cone
+                           length: 0.3809999999999999
+                           position: 0.0
+                       1920675843416978378: 
+                           type: BodyTube
+                           name: Body tube
+                           length: 1.0
+                           position: 0.3809999999999999
+                       -3882127854794108973: 
+                           type: Bulkhead
+                           name: Payload Bulkhead
+                           length: 0.0127
+                           position: 0.8305799999999999
+                       -4329845264073007452: 
+                           type: ShockCord
+                           name: Shock cord (40ft) including linkages 
+                           length: 0.07619999999999999
+                           position: 1.3842999999999996
+                       -3609240597607500453: 
+                           type: Bulkhead
+                           name: Bulkhead
+                           length: 0.0127
+                           position: 1.1683999999999999
+                       -7678854664619798711: 
+                           type: BodyTube
+                           name: Coupler Shoulder
+                           length: 0.07619999999999999
+                           position: 1.3809999999999998
+                       -1878257771866168304: 
+                           type: TubeCoupler
+                           name: Tube coupler
+                           length: 0.4572
+                           position: 1.1905
+                       1378399534763236732: 
+                           type: Bulkhead
+                           name: Coupler Bulkhead FWD With charge wells
+                           length: 0.008890000000000002
+                           position: 1.9169399999999996
+                       -8271450252973067197: 
+                           type: Bulkhead
+                           name: Coupler Bulkhead AFT With charge wells
+                           length: 0.008889999999999999
+                           position: 2.391285
+                       7114939239199882262: 
+                           type: BodyTube
+                           name: Body tube
+                           length: 1.4391999999999998
+                           position: 1.4571999999999998
+                       1708684873492162504: 
+                           type: ShockCord
+                           name: Shock cord (35ft) Including Links
+                           length: 0.07619999999999999
+                           position: 2.143
+                       -4711774291298203023: 
+                           type: InnerTube
+                           name: Inner Tube
+                           length: 0.762
+                           position: 2.3371999999999993
+                       1119415982008421690: 
+                           type: CenteringRing
+                           name: Centering ring Forward
+                           length: 0.0127
+                           position: 1.6701599999999996
+                       4341644554392575608: 
+                           type: CenteringRing
+                           name: Centering ring
+                           length: 0.0127
+                           position: 2.1426
+                       -2969895874130198468: 
+                           type: CenteringRing
+                           name: Centering ring
+                           length: 0.0127
+                           position: 2.4219999999999997
+                       7328393654806062733: 
+                           type: LaunchLug
+                           name: Launch lug Forward
+                           length: 0.038099999999999995
+                           position: 2.7616741999999994
+                       5863470118796049264: 
+                           type: LaunchLug
+                           name: Launch lug
+                           length: 0.038099999999999995
+                           position: 3.7755257999999996
+                       3413535279668158489: 
+                           type: FreeformFinSet
+                           name: Freeform fin set
+                           length: 0.30479999999999996
+                           position: 3.632597580952381
+                       7949774119225263065: 
+                           type: Transition
+                           name: Transition
+                           length: 0.0508
+                           position: 2.8964
+
+2025.Oct.27 23:30:36 - rocketserializer.components.nose_cone - INFO - Collected the dimensions of the nosecone: length, shape and position.
+2025.Oct.27 23:30:36 - rocketserializer.components.nose_cone - INFO - Nosecone is a haack nosecone, searching for the shape parameter
+2025.Oct.27 23:30:36 - rocketserializer.components.nose_cone - INFO - Shape parameter of the nosecone: 0.0
+2025.Oct.27 23:30:36 - rocketserializer.components.nose_cone - INFO - Nosecone setting defined:
+                        name: Nose cone
+                       kind: Von Karman
+                       length: 0.3809999999999999
+                       base_radius: 0.0777875
+                       position: 0.0
+
+2025.Oct.27 23:30:36 - rocketserializer.components.fins - INFO - A total of 0 trapezoidal fin sets were detected
+2025.Oct.27 23:30:36 - rocketserializer.components.fins - INFO - No trapezoidal fins were detected, returning empty dictionary
+2025.Oct.27 23:30:36 - rocketserializer.components.fins - INFO - A total of 0 elliptical fin sets were detected
+2025.Oct.27 23:30:36 - rocketserializer.components.fins - INFO - Since no elliptical fins were detected, returning empty dictionary
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - A total of 1 transitions were found
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - Starting to collect the settings of the transition number 0
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - Collected the name of the transition number 0
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - Collected the dimensions of the transition number 0
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - The transition number 0 was defined with the following settings:
+                       name: Transition
+                       top_radius: 0.0777875
+                       bottom_radius: 0.06349999999999999
+                       length: 0.0508
+                       position: 2.8964
+
+2025.Oct.27 23:30:36 - rocketserializer.components.transition - INFO - All the 1 transition settings were defined
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - A total of 2 parachutes were detected
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Starting to collect the settings of the parachute number 0
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Parachute 'Main Parachute + Bag' has a drag coefficient of 2.200000
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Parachute 'Main Parachute + Bag' will deploy at altitude
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - The Parachute number 0 had its settings defined:
+                       name: Main Parachute + Bag
+                       cd: 2.2
+                       cds: 13.002519279625075
+                       area: 5.910236036193215
+                       deploy_event: altitude
+                       deploy_delay: 0.0
+                       deploy_altitude: 396.24
+
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Starting to collect the settings of the parachute number 1
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Parachute 'Drogue' has a drag coefficient of 2.200000
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - Parachute 'Drogue' will deploy at apogee
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - The Parachute number 1 had its settings defined:
+                       name: Drogue
+                       cd: 2.2
+                       cds: 0.6420997175123491
+                       area: 0.29186350796015864
+                       deploy_event: apogee
+                       deploy_delay: 0.0
+                       deploy_altitude: None
+
+2025.Oct.27 23:30:36 - rocketserializer.components.parachute - INFO - All parachutes settings were collected
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Found the 'flightdata' tag in the 'simulation' tag.
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'max_altitude' value from the .ork file: 3859.603
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'max_velocity' value from the .ork file: 336.887
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'max_acceleration' value from the .ork file: 106.566
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'max_mach' value from the .ork file: 1.014
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'time_to_apogee' value from the .ork file: 27.255
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'flight_time' value from the .ork file: 226.284
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'ground_hit_velocity' value from the .ork file: 5.327
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - Retrieved the 'launch_rod_velocity' value from the .ork file: 32.615
+2025.Oct.27 23:30:36 - rocketserializer.components.stored_results - INFO - The flight data was successfully retrieved:
+                       max_altitude: 3859.603
+                       max_velocity: 336.887
+                       max_acceleration: 106.566
+                       max_mach: 1.014
+                       time_to_apogee: 27.255
+                       flight_time: 226.284
+                       ground_hit_velocity: 5.327
+                       launch_rod_velocity: 32.615
+                       max_stability_margin: 3.232
+                       min_stability_margin: 0.0
+                       burnout_stability_margin: 2.258
+                       max_thrust: 2861.69
+
+2025.Oct.27 23:30:36 - rocketserializer.components.drag_curve - INFO - Collected altitude vector
+2025.Oct.27 23:30:36 - rocketserializer.components.drag_curve - INFO - Removed data after apogee
+2025.Oct.27 23:30:36 - rocketserializer.components.drag_curve - INFO - Collected drag coefficient and Mach number
+2025.Oct.27 23:30:36 - rocketserializer.components.drag_curve - INFO - Successfully created the drag curve
+2025.Oct.27 23:30:36 - rocketserializer.components.drag_curve - INFO - Successfully saved the drag curve file to: 'v-10-jose/drag_curve.csv'
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Drag curve generated.
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Collected thrust vector
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - The thrust points were sorted to be in ascending order
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Successfully clipped the thrust curve to remove negative values
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Successfully created the thrust curve
+2025.Oct.27 23:30:36 - rocketserializer.components.motor - INFO - Successfully saved the thrust curve to: 'v-10-jose/thrust_source.csv'
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Thrust curve generated.
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Extraction completed. A dictionary with all the parameters was generated.
+2025.Oct.27 23:30:36 - rocketserializer.ork_extractor - INFO - Dictionary with the parameters:
+                       id: 
+                           rocket_name: Jose's Rocket
+                           comment: Its Joever
+                           designer: The Rocket Launchers
+                           filepath: rocket.ork
+                       environment: 
+                           latitude: 28.61
+                           longitude: -80.6
+                           elevation: 1402.0800000000002
+                           wind_average: 2.0
+                           wind_turbulence: 0.1
+                           geodetic_method: spherical
+                           base_temperature: 305.37222222222226
+                           base_pressure: 85597.58912299939
+                           date: None
+                       rocket: 
+                           radius: 0.0777875
+                           mass: 28.271
+                           inertia: (0.115, 0.115, 21.424)
+                           center_of_mass_without_propellant: 1.476
+                           coordinate_system_orientation: nose_to_tail
+                           drag_curve: ./v-10-jose\drag_curve.csv
+                       nosecones: 
+                           name: Nose cone
+                           kind: Von Karman
+                           length: 0.3809999999999999
+                           base_radius: 0.0777875
+                           position: 0.0
+                       trapezoidal_fins: 
+                       elliptical_fins: 
+                       tails: 
+                           0: 
+                               name: Transition
+                               top_radius: 0.0777875
+                               bottom_radius: 0.06349999999999999
+                               length: 0.0508
+                               position: 2.8964
+                       parachutes: 
+                           0: 
+                               name: Main Parachute + Bag
+                               cd: 2.2
+                               cds: 13.002519279625075
+                               area: 5.910236036193215
+                               deploy_event: altitude
+                               deploy_delay: 0.0
+                               deploy_altitude: 396.24
+                           1: 
+                               name: Drogue
+                               cd: 2.2
+                               cds: 0.6420997175123491
+                               area: 0.29186350796015864
+                               deploy_event: apogee
+                               deploy_delay: 0.0
+                               deploy_altitude: None
+                       rail_buttons: 
+                           name: Launch lug Forward
+                           upper_position: 2.7616741999999994
+                           lower_position: 3.7755257999999996
+                           distance: 1.0138516000000002
+                           angular_position: 59.99999999999999
+                       motors: 
+                           grain_density: 1173.1466429429975
+                           grain_initial_inner_radius: 0.0245
+                           grain_outer_radius: 0.049
+                           grain_initial_height: 0.702
+                           nozzle_radius: 0.036750000000000005
+                           throat_radius: 0.0245
+                           dry_mass: 0
+                           dry_inertia: (0, 0, 0)
+                           center_of_dry_mass_position: 0
+                           grains_center_of_mass_position: 0
+                           grain_number: 1
+                           grain_separation: 0
+                           nozzle_position: -0.351
+                           coordinate_system_orientation: nozzle_to_combustion_chamber
+                           position: 2.4727773722627746
+                           thrust_source: ./v-10-jose\thrust_source.csv
+                       flight: 
+                           rail_length: 5.1816
+                           inclination: 90.0
+                           heading: 90.0
+                       stored_results: 
+                           max_altitude: 3859.603
+                           max_velocity: 336.887
+                           max_acceleration: 106.566
+                           max_mach: 1.014
+                           time_to_apogee: 27.255
+                           flight_time: 226.284
+                           ground_hit_velocity: 5.327
+                           launch_rod_velocity: 32.615
+                           max_stability_margin: 3.232
+                           min_stability_margin: 0.0
+                           burnout_stability_margin: 2.258
+                           max_thrust: 2861.69
+
+2025.Oct.27 23:30:36 - orhelper._orhelper - INFO - JVM shut down
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Header created
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Imports section created
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Environment section created
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Motor section created
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Nosecone created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - WARNING - No fins were added to the rocket. Check parameters.json
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Tails created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] All aerodynamic surfaces created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Parachutes created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Rail Buttons created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Rocket section created
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Flight section created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Compare Results section created.
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Notebook saved to './v-10-jose\simulation.ipynb'
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Black formatting applied to the final notebook
+2025.Oct.27 23:30:36 - rocketserializer.nb_builder - INFO - [NOTEBOOK BUILDER] Notebook successfully built! You can find it at: ./v-10-jose

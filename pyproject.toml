@@ -1,0 +1,13 @@
+[project]
+name = "rl-rocketpy-sim"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "jupyterlab>=4.4.10",
+    "pandas>=2.3.3",
+    "rocketpy>=1.10.0",
+    "rocketserializer>=0.2.0",
+    "scipy>=1.16.2",
+]
