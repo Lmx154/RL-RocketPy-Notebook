@@ -1677,7 +1677,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rl-rocketpy-hil"
+name = "rl-rocketpy-sim"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
