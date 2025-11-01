@@ -18,6 +18,7 @@ import numpy as np
 import csv
 import os
 from rocketpy import Environment, SolidMotor, Rocket, TrapezoidalFins, NoseCone, Tail, Parachute
+from rocketpy.sensors import Accelerometer, Gyroscope, Barometer, GnssReceiver
 
 
 # ==================== LAUNCH SITE CONFIGURATIONS ====================
@@ -110,6 +111,48 @@ RAIL_LENGTH = 5.1816  # m
 LAUNCH_INCLINATION = 90.0  # degrees
 LAUNCH_HEADING = 90.0  # degrees
 MAX_SIMULATION_TIME = 600  # seconds
+
+
+# ==================== SENSOR PARAMETERS ====================
+# Position of sensor suite (from nose tip, in tail_to_nose coordinate system)
+SENSOR_POSITION = -1.5  # m (negative = toward tail, mounted near center of rocket)
+
+# Sensor orientation: (0, 0, 0) means aligned with rocket body axes
+# X-axis: perpendicular to rocket longitudinal axis
+# Y-axis: perpendicular to rocket longitudinal axis  
+# Z-axis: along rocket longitudinal axis (tail to nose)
+SENSOR_ORIENTATION = (0, 0, 0)  # degrees (roll, pitch, yaw) - aligned with rocket
+
+# IMU (Accelerometer + Gyroscope) Configuration
+IMU_SAMPLING_RATE = 100  # Hz - typical for flight computers
+ACCEL_MEASUREMENT_RANGE = 160  # m/s² (~16g)
+ACCEL_NOISE_DENSITY = 0.0003  # typical for MEMS accelerometers
+ACCEL_NOISE_VARIANCE = 1
+ACCEL_RANDOM_WALK_DENSITY = 0.00001
+ACCEL_RANDOM_WALK_VARIANCE = 1
+ACCEL_CONSTANT_BIAS = 0.0
+ACCEL_CONSIDER_GRAVITY = True  # Include gravity in measurements
+
+GYRO_MEASUREMENT_RANGE = 8.727  # rad/s (~500 deg/s)
+GYRO_NOISE_DENSITY = 0.0001  # typical for MEMS gyroscopes
+GYRO_NOISE_VARIANCE = 1
+GYRO_RANDOM_WALK_DENSITY = 0.000001
+GYRO_RANDOM_WALK_VARIANCE = 1
+GYRO_CONSTANT_BIAS = 0.0
+
+# Barometer Configuration
+BARO_SAMPLING_RATE = 50  # Hz
+BARO_MEASUREMENT_RANGE = 120000  # Pa (covers sea level to ~10km altitude)
+BARO_NOISE_DENSITY = 0.1  # Pa
+BARO_NOISE_VARIANCE = 1
+BARO_RANDOM_WALK_DENSITY = 0.01
+BARO_RANDOM_WALK_VARIANCE = 1
+BARO_CONSTANT_BIAS = 0.0
+
+# GNSS Configuration
+GNSS_SAMPLING_RATE = 10  # Hz - typical for GPS modules
+GNSS_POSITION_ACCURACY = 3.0  # meters - horizontal accuracy
+GNSS_ALTITUDE_ACCURACY = 5.0  # meters - vertical accuracy
 
 
 def load_drag_coefficients(base_path='../../data'):
@@ -286,12 +329,108 @@ def create_parachutes():
     return [main_parachute, drogue_parachute]
 
 
-def create_rocket(include_parachutes=True, drag_data_path='../../data'):
+def create_accelerometer():
+    """
+    Create an accelerometer sensor.
+    
+    Returns:
+        Accelerometer: Configured accelerometer sensor aligned with rocket axes
+    """
+    accelerometer = Accelerometer(
+        sampling_rate=IMU_SAMPLING_RATE,
+        orientation=SENSOR_ORIENTATION,
+        measurement_range=ACCEL_MEASUREMENT_RANGE,
+        noise_density=ACCEL_NOISE_DENSITY,
+        noise_variance=ACCEL_NOISE_VARIANCE,
+        random_walk_density=ACCEL_RANDOM_WALK_DENSITY,
+        random_walk_variance=ACCEL_RANDOM_WALK_VARIANCE,
+        constant_bias=ACCEL_CONSTANT_BIAS,
+        consider_gravity=ACCEL_CONSIDER_GRAVITY,
+        name='V-10 Accelerometer',
+    )
+    return accelerometer
+
+
+def create_gyroscope():
+    """
+    Create a gyroscope sensor.
+    
+    Returns:
+        Gyroscope: Configured gyroscope sensor aligned with rocket axes
+    """
+    gyroscope = Gyroscope(
+        sampling_rate=IMU_SAMPLING_RATE,
+        orientation=SENSOR_ORIENTATION,
+        measurement_range=GYRO_MEASUREMENT_RANGE,
+        noise_density=GYRO_NOISE_DENSITY,
+        noise_variance=GYRO_NOISE_VARIANCE,
+        random_walk_density=GYRO_RANDOM_WALK_DENSITY,
+        random_walk_variance=GYRO_RANDOM_WALK_VARIANCE,
+        constant_bias=GYRO_CONSTANT_BIAS,
+        name='V-10 Gyroscope',
+    )
+    return gyroscope
+
+
+def create_barometer():
+    """
+    Create a barometer sensor.
+    
+    Returns:
+        Barometer: Configured barometer sensor
+    """
+    barometer = Barometer(
+        sampling_rate=BARO_SAMPLING_RATE,
+        measurement_range=BARO_MEASUREMENT_RANGE,
+        noise_density=BARO_NOISE_DENSITY,
+        noise_variance=BARO_NOISE_VARIANCE,
+        random_walk_density=BARO_RANDOM_WALK_DENSITY,
+        random_walk_variance=BARO_RANDOM_WALK_VARIANCE,
+        constant_bias=BARO_CONSTANT_BIAS,
+        name='V-10 Barometer',
+    )
+    return barometer
+
+
+def create_gnss():
+    """
+    Create a GNSS (GPS) receiver sensor.
+    
+    Returns:
+        GnssReceiver: Configured GNSS receiver sensor
+    """
+    gnss = GnssReceiver(
+        sampling_rate=GNSS_SAMPLING_RATE,
+        position_accuracy=GNSS_POSITION_ACCURACY,
+        altitude_accuracy=GNSS_ALTITUDE_ACCURACY,
+        name='V-10 GNSS',
+    )
+    return gnss
+
+
+def create_sensors():
+    """
+    Create all sensors for the V-10 rocket.
+    
+    Returns:
+        dict: Dictionary containing all sensors with keys:
+              'accelerometer', 'gyroscope', 'barometer', 'gnss'
+    """
+    return {
+        'accelerometer': create_accelerometer(),
+        'gyroscope': create_gyroscope(),
+        'barometer': create_barometer(),
+        'gnss': create_gnss(),
+    }
+
+
+def create_rocket(include_parachutes=True, include_sensors=True, drag_data_path='../../data'):
     """
     Create the complete V-10 rocket assembly.
     
     Args:
         include_parachutes: Whether to add parachutes (default: True)
+        include_sensors: Whether to add sensors (default: True)
         drag_data_path: Path to drag coefficient data
         
     Returns:
@@ -337,6 +476,12 @@ def create_rocket(include_parachutes=True, drag_data_path='../../data'):
         angular_position=BUTTON_ANGULAR_POSITION,
     )
     
+    # Add sensors if requested
+    if include_sensors:
+        sensors = create_sensors()
+        for sensor_name, sensor in sensors.items():
+            rocket.add_sensor(sensor, SENSOR_POSITION)
+    
     return rocket
 
 
@@ -348,3 +493,9 @@ if __name__ == "__main__":
     print(f"  - Dry mass: {rocket.mass:.3f} kg")
     print(f"  - Radius: {rocket.radius:.4f} m")
     print(f"  - Surfaces: {len(rocket.aerodynamic_surfaces)}")
+    print(f"  - Sensors: {len(rocket.sensors)}")
+    print("\nSensor Suite (all sensors aligned with rocket body axes):")
+    for sensor_tuple in rocket.sensors:
+        sensor_obj = sensor_tuple[0]  # sensor is stored as (sensor, position) tuple
+        sensor_pos = sensor_tuple[1]
+        print(f"  - {sensor_obj.name} at position {sensor_pos}")
