@@ -18,7 +18,7 @@ Start by running
 uv sync
 ```
 
-## 3D Rocket Viewer (NEW!)
+## 3D Rocket Viewer
 
 We now have a dedicated GUI application for viewing your rockets in 3D!
 
@@ -33,36 +33,6 @@ This launches a user-friendly application where you can:
 - Rotate, pan, and zoom with your mouse
 - Export models to STL for 3D printing
 - View mesh statistics
-
-### Installation
-
-```bash
-uv pip install PySide6 pyvistaqt
-```
-
-### Features
-
-- ✅ Single unified window (no more popup spam!)
-- ✅ Component selection checkboxes
-- ✅ Embedded 3D viewer
-- ✅ Export to STL/OBJ/PLY/VTK
-- ✅ Cross-platform (Windows, macOS, Linux)
-
-### Usage from Code
-
-```python
-from sim.gui import launch_viewer
-from rocketpy import Rocket
-
-# Create your rocket
-rocket = Rocket(...)
-# ... configure rocket ...
-
-# Launch the 3D viewer
-launch_viewer(rocket=rocket)
-```
-
-See [GUI_DOCUMENTATION.md](GUI_DOCUMENTATION.md) for complete details.
 
 
 ## If you're going to work on the V-10 notebook
