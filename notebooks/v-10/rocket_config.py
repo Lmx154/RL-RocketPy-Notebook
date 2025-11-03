@@ -75,7 +75,7 @@ BOATTAIL_LENGTH = 0.0508  # m
 ROCKET_DRY_MASS = 17.732  # kg
 ROCKET_INERTIA_I = 0.115  # kg⋅m²
 ROCKET_INERTIA_Z = 21.424  # kg⋅m²
-ROCKET_COM_WITHOUT_MOTOR = 0.0  # m
+ROCKET_COM_WITHOUT_MOTOR = -1.77  # m (177 cm from nose in CAD - negative = toward tail in tail_to_nose coordinate system)
 
 
 # ==================== COMPONENT POSITIONS ====================
