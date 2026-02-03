@@ -1,2 +1,6 @@
 .venv/
 serializer/*.jar
+# Ignore Python caches everywhere
+__pycache__/
+**/__pycache__/
+*.py[cod]
