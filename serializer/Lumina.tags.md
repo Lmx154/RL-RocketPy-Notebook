@@ -1,0 +1,362 @@
+# XML Tag Outline
+
+Source: /home/luis/Projects/Python/RL-RocketPy-Notebook/serializer/Lumina.xml
+
+
+  - openrocket (count: 1) attrs: [creator=OpenRocket 24.12, version=1.10]
+    - rocket (count: 1)
+      - name (count: 1) value: The Goon Lagoon
+      - id (count: 1) value: ffd1c356-685e-4597-928a-a023806c466e
+      - axialoffset (count: 1) attrs: [method=absolute] value: 0.0
+      - position (count: 1) attrs: [type=absolute] value: 0.0
+      - comment (count: 1) value: Its Joever
+      - designer (count: 1) value: The Rocket Launchers
+      - designtype (count: 1) value: original
+      - revision (count: 1) value: 10/13 body tube sizes adjusted
+      - motorconfiguration (count: 3) attrs: [configid=cd82868e-2b30-451f-b30a-1f54c3c20b70, default=true]
+        - stage (count: 3) attrs: [active=true, number=0]
+      - referencetype (count: 1) value: maximum
+      - subcomponents (count: 1)
+        - stage (count: 1)
+          - name (count: 1) value: Sustainer
+          - id (count: 1) value: d0dd99bc-6c95-490e-a421-930040271b39
+          - subcomponents (count: 1)
+            - nosecone (count: 1)
+              - name (count: 1) value: Nose cone
+              - id (count: 1) value: 44466fd2-8a2b-4736-8537-69e3da7b1e86
+              - finish (count: 1) value: smooth
+              - material (count: 1) attrs: [density=1650.0, group=Custom, type=bulk] value: Fiber Glass in house
+              - length (count: 1) value: 0.93345
+              - thickness (count: 1) value: 0.0015875
+              - shape (count: 1) value: haack
+              - shapeclipped (count: 1) value: false
+              - shapeparameter (count: 1) value: 0.0
+              - aftradius (count: 1) value: auto 0.0777875
+              - aftshoulderradius (count: 1) value: 0.07619999999999999
+              - aftshoulderlength (count: 1) value: 0.10159999999999997
+              - aftshoulderthickness (count: 1) value: 0.003175
+              - aftshouldercapped (count: 1) value: false
+              - isflipped (count: 1) value: false
+              - subcomponents (count: 1)
+                - masscomponent (count: 1)
+                  - name (count: 1) value: Nosecone Tip & Mount
+                  - id (count: 1) value: 7c03d78f-677d-43cc-9775-df107b7660d8
+                  - axialoffset (count: 1) attrs: [method=top] value: 0.007619999999999999
+                  - position (count: 1) attrs: [type=top] value: 0.007619999999999999
+                  - packedlength (count: 1) value: 0.07619999999999999
+                  - packedradius (count: 1) value: 0.0125
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - mass (count: 1) value: 0.90718474
+                  - masscomponenttype (count: 1) value: masscomponent
+                - shockcord (count: 1)
+                  - name (count: 1) value: Shock cord (35ft) Including Links
+                  - id (count: 1) value: 879b7667-9d8f-488a-b396-0180adcef35d
+                  - axialoffset (count: 1) attrs: [method=top] value: 1.6001999999999998
+                  - position (count: 1) attrs: [type=top] value: 1.6001999999999998
+                  - overridemass (count: 1) value: 0.7665711053
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - packedlength (count: 1) value: 0.07619999999999999
+                  - packedradius (count: 1) value: 0.07365999999999999
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - cordlength (count: 1) value: 10.668000000000001
+                  - material (count: 1) attrs: [density=0.11607678, group=ThreadsLines, type=line] value: Kevlar 12-strand (13 mm, 1/2 in)
+                - parachute (count: 1)
+                  - name (count: 1) value: Drogue
+                  - id (count: 1) value: f6ae90e6-52da-45c0-853b-ef52ff0c5359
+                  - axialoffset (count: 1) attrs: [method=top] value: 1.4986
+                  - position (count: 1) attrs: [type=top] value: 1.4986
+                  - overridemass (count: 1) value: 0.13517052626
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - packedlength (count: 1) value: 0.1016
+                  - packedradius (count: 1) value: 0.07619999999999999
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - cd (count: 1) value: 2.2
+                  - material (count: 1) attrs: [density=0.067, group=Fabrics, type=surface] value: Ripstop nylon
+                  - deployevent (count: 1) value: apogee
+                  - deployaltitude (count: 1) value: 200.0
+                  - deploydelay (count: 1) value: 0.0
+                  - diameter (count: 1) value: 0.6095999999999999
+                  - linecount (count: 1) value: 4
+                  - linelength (count: 1) value: 0.6095999999999999
+                  - linematerial (count: 1) attrs: [density=0.02723097, group=ThreadsLines, type=line] value: Nylon flat webbing lg. (14 mm, 9/16 in)
+            - bodytube (count: 3)
+              - name (count: 3) value: Body tube
+              - id (count: 3) value: 19c1d924-422e-4f4d-8cd7-9a3c81cf61a6
+              - finish (count: 3) value: smooth
+              - material (count: 3) attrs: [density=1650.0, group=Custom, type=bulk] value: Fiber Glass in house
+              - length (count: 3) value: 1.2191999999999998
+              - thickness (count: 3) value: 0.0015875
+              - radius (count: 3) value: 0.0777875
+              - subcomponents (count: 3)
+                - bulkhead (count: 2)
+                  - name (count: 2) value: Payload Bulkhead
+                  - id (count: 2) value: aed8d5d2-89f6-4fc7-8bf1-387cb05d2f6d
+                  - instancecount (count: 2) value: 1
+                  - instanceseparation (count: 2) value: 0.0
+                  - axialoffset (count: 2) attrs: [method=top] value: 0.4191
+                  - position (count: 2) attrs: [type=top] value: 0.4191
+                  - overridemass (count: 1) value: 0.9888313666000002
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - material (count: 2) attrs: [density=2700.0, group=Metals, type=bulk] value: Aluminum
+                  - length (count: 2) value: 0.0127
+                  - radialposition (count: 2) value: 0.0
+                  - radialdirection (count: 2) value: 0.0
+                  - outerradius (count: 2) value: 0.07619999999999999
+                - masscomponent (count: 4)
+                  - name (count: 4) value: Payload
+                  - id (count: 4) value: d1c931d2-aecf-4fd9-b7f6-9790381af806
+                  - axialoffset (count: 4) attrs: [method=top] value: 0.0127
+                  - position (count: 4) attrs: [type=top] value: 0.0127
+                  - packedlength (count: 4) value: 0.4063999999999999
+                  - packedradius (count: 4) value: 0.07619999999999999
+                  - radialposition (count: 4) value: 0.0
+                  - radialdirection (count: 4) value: 0.0
+                  - mass (count: 4) value: 2.83495231
+                  - masscomponenttype (count: 4) value: payload
+                  - color (count: 1) attrs: [alpha=255, blue=102, green=102, red=0]
+                  - linestyle (count: 1) value: solid
+                - shockcord (count: 1)
+                  - name (count: 1) value: Shock cord (40ft) including linkages
+                  - id (count: 1) value: 8211a7a2-8621-4133-8fd0-888cc818558a
+                  - axialoffset (count: 1) attrs: [method=top] value: 0.4826
+                  - position (count: 1) attrs: [type=top] value: 0.4826
+                  - overridemass (count: 1) value: 0.8663614267
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - packedlength (count: 1) value: 0.07619999999999999
+                  - packedradius (count: 1) value: 0.07365999999999999
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - cordlength (count: 1) value: 12.192
+                  - material (count: 1) attrs: [density=0.11607678, group=ThreadsLines, type=line] value: Kevlar 12-strand (13 mm, 1/2 in)
+                - parachute (count: 1)
+                  - name (count: 1) value: Main Parachute + Bag
+                  - id (count: 1) value: 34aa8618-75e3-4125-934c-fa14fc6a4664
+                  - axialoffset (count: 1) attrs: [method=top] value: 0.762
+                  - position (count: 1) attrs: [type=top] value: 0.762
+                  - overridemass (count: 1) value: 0.6939963261000001
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - packedlength (count: 1) value: 0.20319999999999994
+                  - packedradius (count: 1) value: 0.0508
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - cd (count: 1) value: 2.2
+                  - material (count: 1) attrs: [density=0.067, group=Fabrics, type=surface] value: Ripstop nylon
+                  - deployevent (count: 1) value: altitude
+                  - deployaltitude (count: 1) value: 396.24
+                  - deploydelay (count: 1) value: 0.0
+                  - diameter (count: 1) value: 2.7432000000000003
+                  - linecount (count: 1) value: 4
+                  - linelength (count: 1) value: 2.032
+                  - linematerial (count: 1) attrs: [density=0.02723097, group=ThreadsLines, type=line] value: Nylon flat webbing lg. (14 mm, 9/16 in)
+                - tubecoupler (count: 1)
+                  - name (count: 1) value: Tube coupler
+                  - id (count: 1) value: a74c14d8-262e-4df0-b9dd-5536cc31e2dd
+                  - axialoffset (count: 1) attrs: [method=middle] value: 2.7755575615628914E-17
+                  - position (count: 1) attrs: [type=middle] value: 2.7755575615628914E-17
+                  - material (count: 1) attrs: [density=1650.0, group=Custom, type=bulk] value: Fiber Glass in house
+                  - length (count: 1) value: 0.4572
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - outerradius (count: 1) value: 0.07619999999999999
+                  - thickness (count: 1) value: 0.0015875
+                  - subcomponents (count: 1)
+                    - masscomponent (count: 5)
+                      - name (count: 5) value: Recovery Hardware
+                      - id (count: 5) value: 9d67dc6a-983d-44f8-8037-815f9bdb5791
+                      - axialoffset (count: 5) attrs: [method=middle] value: 0.0
+                      - position (count: 5) attrs: [type=middle] value: 0.0
+                      - overridemass (count: 3) value: 0.18143694800000001
+                      - overridesubcomponentsmass (count: 3) value: false
+                      - packedlength (count: 5) value: 0.18288
+                      - packedradius (count: 5) value: 0.044449999999999996
+                      - radialposition (count: 5) value: 0.0
+                      - radialdirection (count: 5) value: 0.0
+                      - mass (count: 5) value: 0.18143694800000001
+                      - masscomponenttype (count: 5) value: recoveryhardware
+                    - bulkhead (count: 2)
+                      - name (count: 2) value: Coupler Bulkhead FWD With charge wells
+                      - id (count: 2) value: 7aadf516-416c-4724-98c3-a0ebc37cc597
+                      - instancecount (count: 2) value: 1
+                      - instanceseparation (count: 2) value: 0.0
+                      - axialoffset (count: 2) attrs: [method=bottom] value: -0.45592999999999995
+                      - position (count: 2) attrs: [type=bottom] value: -0.45592999999999995
+                      - overridemass (count: 2) value: 0.5624545388000001
+                      - overridesubcomponentsmass (count: 2) value: false
+                      - material (count: 2) attrs: [density=2700.0, group=Metals, type=bulk] value: Aluminum
+                      - length (count: 2) value: 0.008890000000000002
+                      - radialposition (count: 2) value: 0.0
+                      - radialdirection (count: 2) value: 0.0
+                      - outerradius (count: 2) value: 0.07619999999999999
+                - innertube (count: 1)
+                  - name (count: 1) value: Inner Tube
+                  - id (count: 1) value: 6c62d86e-765c-45ad-b75e-bd5071bbceb7
+                  - axialoffset (count: 1) attrs: [method=bottom] value: 0.050799999999999956
+                  - position (count: 1) attrs: [type=bottom] value: 0.050799999999999956
+                  - overridemass (count: 1) value: 0.6078137758000001
+                  - overridesubcomponentsmass (count: 1) value: false
+                  - material (count: 1) attrs: [density=1850.0, group=Composites, type=bulk] value: Fiberglass
+                  - length (count: 1) value: 0.762
+                  - radialposition (count: 1) value: 0.0
+                  - radialdirection (count: 1) value: 0.0
+                  - outerradius (count: 1) value: 0.052832
+                  - thickness (count: 1) value: 0.0031749999999999973
+                  - clusterconfiguration (count: 1) value: single
+                  - clusterscale (count: 1) value: 1.0
+                  - clusterrotation (count: 1) value: 0.0
+                  - motormount (count: 1)
+                    - ignitionevent (count: 1) value: automatic
+                    - ignitiondelay (count: 1) value: 0.0
+                    - overhang (count: 1) value: 0.0
+                    - motor (count: 1) attrs: [configid=5a86e108-c396-4fd6-8d07-dceb59683e14]
+                      - type (count: 1) value: reload
+                      - manufacturer (count: 1) value: AeroTech
+                      - digest (count: 1) value: 2a2c010e2811015043d13e9a2a9d327d
+                      - designation (count: 1) value: M2500T
+                      - diameter (count: 1) value: 0.098
+                      - length (count: 1) value: 0.751
+                      - delay (count: 1) value: 0.0
+                    - ignitionconfiguration (count: 1) attrs: [configid=5a86e108-c396-4fd6-8d07-dceb59683e14]
+                      - ignitionevent (count: 1) value: automatic
+                      - ignitiondelay (count: 1) value: 0.0
+                  - subcomponents (count: 1)
+                    - centeringring (count: 3)
+                      - name (count: 3) value: Centering ring Forward
+                      - id (count: 3) value: e4da0784-304f-4391-8478-f5e85bd2b5fb
+                      - instancecount (count: 3) value: 1
+                      - instanceseparation (count: 3) value: 0.0
+                      - axialoffset (count: 3) attrs: [method=top] value: 0.01016000000000001
+                      - position (count: 3) attrs: [type=top] value: 0.01016000000000001
+                      - overridemass (count: 3) value: 0.24675424928000003
+                      - overridesubcomponentsmass (count: 3) value: false
+                      - material (count: 3) attrs: [density=530.0, group=Woods, type=bulk] value: Pine
+                      - length (count: 3) value: 0.0127
+                      - radialposition (count: 3) value: 0.0
+                      - radialdirection (count: 3) value: 0.0
+                      - outerradius (count: 3) value: 0.07619999999999999
+                      - innerradius (count: 3) value: 0.048895
+                - launchlug (count: 2)
+                  - name (count: 2) value: Launch lug Forward
+                  - id (count: 2) value: 64cac0ba-08eb-4229-8c04-a96fc1a68d35
+                  - instancecount (count: 2) value: 1
+                  - instanceseparation (count: 2) value: 0.0
+                  - angleoffset (count: 2) attrs: [method=relative] value: 59.99999999999999
+                  - radialdirection (count: 2) value: 59.99999999999999
+                  - axialoffset (count: 2) attrs: [method=top] value: 0.3396741999999997
+                  - position (count: 2) attrs: [type=top] value: 0.3396741999999997
+                  - finish (count: 2) value: smooth
+                  - material (count: 2) attrs: [density=1420.0, group=Plastics, type=bulk] value: Delrin
+                  - radius (count: 2) value: 0.0080518
+                  - length (count: 2) value: 0.038099999999999995
+                  - thickness (count: 2) value: 0.0080518
+                - freeformfinset (count: 1)
+                  - name (count: 1) value: Freeform fin set
+                  - id (count: 1) value: 66bb9181-b015-4e73-84ef-c04687619d00
+                  - instancecount (count: 1) value: 4
+                  - fincount (count: 1) value: 4
+                  - radiusoffset (count: 1) attrs: [method=surface] value: 0.0
+                  - angleoffset (count: 1) attrs: [method=relative] value: 0.0
+                  - rotation (count: 1) value: 0.0
+                  - axialoffset (count: 1) attrs: [method=bottom] value: -2.4190476185514953E-6
+                  - position (count: 1) attrs: [type=bottom] value: -2.4190476185514953E-6
+                  - finish (count: 1) value: smooth
+                  - material (count: 1) attrs: [density=2700.0, group=Metals, type=bulk] value: Aluminum
+                  - thickness (count: 1) value: 0.0048259999999999996
+                  - crosssection (count: 1) value: rounded
+                  - cant (count: 1) value: 0.0
+                  - tabheight (count: 1) value: 0.0254
+                  - tablength (count: 1) value: 0.29209999999999997
+                  - tabposition (count: 2) attrs: [relativeto=front] value: 0.0
+                  - filletradius (count: 1) value: 0.0254
+                  - filletmaterial (count: 1) attrs: [density=2700.0, group=Metals, type=bulk] value: Aluminum
+                  - finpoints (count: 1)
+                    - point (count: 4) attrs: [x=0.0, y=0.0]
+            - transition (count: 1)
+              - name (count: 1) value: Transition
+              - id (count: 1) value: d664834f-435d-4318-b575-f68b7e3a19c3
+              - overridemass (count: 1) value: 0.90718474
+              - overridesubcomponentsmass (count: 1) value: false
+              - finish (count: 1) value: normal
+              - material (count: 1) attrs: [density=1200.0, group=Plastics, type=bulk] value: Polycarbonate (Lexan)
+              - length (count: 1) value: 0.0508
+              - thickness (count: 1) value: filled
+              - shape (count: 1) value: conical
+              - foreradius (count: 1) value: 0.0777875
+              - aftradius (count: 1) value: 0.06349999999999999
+              - foreshoulderradius (count: 1) value: 0.07619999999999999
+              - foreshoulderlength (count: 1) value: 0.0127
+              - foreshoulderthickness (count: 1) value: 0.024637999999999997
+              - foreshouldercapped (count: 1) value: false
+              - aftshoulderradius (count: 1) value: 0.0
+              - aftshoulderlength (count: 1) value: 0.0
+              - aftshoulderthickness (count: 1) value: 0.0
+              - aftshouldercapped (count: 1) value: false
+    - simulations (count: 1)
+      - simulation (count: 15) attrs: [status=loaded]
+        - name (count: 15) value: Simulation 1
+        - simulator (count: 15) value: RK4Simulator
+        - calculator (count: 15) value: BarrowmanCalculator
+        - conditions (count: 15)
+          - configid (count: 15) value: 5a86e108-c396-4fd6-8d07-dceb59683e14
+          - launchrodlength (count: 15) value: 5.1816
+          - launchintowind (count: 15) value: true
+          - launchrodangle (count: 15) value: 0.0
+          - launchroddirection (count: 15) value: 90.0
+          - windaverage (count: 15) value: 2.0
+          - windturbulence (count: 15) value: 0.1
+          - winddirection (count: 15) value: 1.5707963267948966
+          - wind (count: 30) attrs: [altituderef=msl, model=average]
+            - speed (count: 15) value: 2.0
+            - direction (count: 15) value: 1.5707963267948966
+            - standarddeviation (count: 15) value: 0.2
+            - windlevel (count: 15) attrs: [altitude=0.0, direction=1.5707963267948966, speed=2.0, standarddeviation=0.2]
+          - windmodeltype (count: 15) value: Average
+          - launchaltitude (count: 15) value: 1402.0800000000002
+          - launchlatitude (count: 15) value: 28.61
+          - launchlongitude (count: 15) value: -80.6
+          - geodeticmethod (count: 15) value: spherical
+          - atmosphere (count: 15) attrs: [model=isa]
+            - basetemperature (count: 1) value: 305.37222222222226
+            - basepressure (count: 1) value: 85597.5891229994
+          - timestep (count: 15) value: 0.05
+          - maxtime (count: 15) value: 1200.0
+        - flightdata (count: 15) attrs: [deploymentvelocity=26.723, flighttime=203.038, groundhitvelocity=6.112, launchrodvelocity=30.848, maxacceleration=95.075, maxaltitude=3453.874, maxmach=0.911, maxvelocity=302.957, optimumdelay=21.965, timetoapogee=26.229]
+          - warning (count: 15) attrs: [type=HighSpeedDeployment]
+            - id (count: 15) value: ab18a4d5-95dc-4857-bd95-6af56cd03963
+            - description (count: 15) value: Recovery device deployment at high speed (87.7 ft/s)
+            - priority (count: 15) value: NORMAL
+            - source (count: 2) value: 34aa8618-75e3-4125-934c-fa14fc6a4664
+            - parameter (count: 2) value: 26.72253378419317
+          - databranch (count: 15) attrs: [name=Sustainer, optimumAltitude=3453.8738942964087, timeToOptimumAltitude=26.22911197215875, types=Time,Altitude,Altitude above sea level,Vertical velocity,To…]
+            - event (count: 169) attrs: [id=1458d2c1-3148-46d2-81b8-fd759fd7c5e1, source=ffd1c356-685e-4597-928a-a023806c466e, time=0, type=launch, warnid=ab18a4d5-95dc-4857-bd95-6af56cd03963]
+            - datapoint (count: 16978) value: 0,0,1402.08,0,0,0,0,0,0,0,0,0,0,0.499,-1.407,1.571,0,0,0,1.571,0,28.519,8.064,2…
+    - photostudio (count: 1)
+      - roll (count: 1) value: 3.14
+      - yaw (count: 1) value: 0.0
+      - pitch (count: 1) value: 2.05
+      - advance (count: 1) value: 0.0
+      - viewAlt (count: 1) value: 1.117457627118644
+      - viewAz (count: 1) value: 5.441436377829815
+      - viewDistance (count: 1) value: 1.7400000000000007
+      - fov (count: 1) value: 1.4
+      - lightAlt (count: 1) value: 0.35
+      - lightAz (count: 1) value: -1.0
+      - sunlight (count: 1) attrs: [alpha=255, blue=255, green=255, red=255]
+      - ambiance (count: 1) value: 0.30000001192092896
+      - skyColor (count: 1) attrs: [alpha=255, blue=155, green=95, red=55]
+      - motionBlurred (count: 1) value: false
+      - flame (count: 1) value: false
+      - flameColor (count: 1) attrs: [alpha=255, blue=50, green=100, red=255]
+      - smoke (count: 1) value: false
+      - smokeColor (count: 1) attrs: [alpha=102, blue=230, green=230, red=230]
+      - sparks (count: 1) value: false
+      - exhaustScale (count: 1) value: 1.0
+      - flameAspectRatio (count: 1) value: 1.0
+      - sparkConcentration (count: 1) value: 0.2
+      - sparkWeight (count: 1) value: 0.0
+      - sky (count: 1) value: net.sf.openrocket.gui.figure3d.photo.sky.builtin.Mountains
+    - docprefs (count: 1)
+      - docmaterials (count: 1)
+        - material (count: 1) value: BULK|Fiber Glass in house|1650.0|Custom
