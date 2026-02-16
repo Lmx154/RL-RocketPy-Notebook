@@ -20,6 +20,7 @@ Usage:
 """
 
 import sys
+import os
 import logging
 import numpy as np
 from PySide6.QtWidgets import (
@@ -417,7 +418,8 @@ class RocketViewerApp(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Create PyVista QtInteractor (embedded viewer)
-        self.plotter = QtInteractor(panel)
+        multi_samples = int(os.environ.get('ROCKET_VIEWER_MULTI_SAMPLES', '0'))
+        self.plotter = QtInteractor(panel, multi_samples=multi_samples)
         self.plotter.set_background('white')
         layout.addWidget(self.plotter.interactor)
         
@@ -1284,6 +1286,11 @@ def launch_gui(rocket, environment=None):
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
+    
+    try:
+        print(f'Qt backend in use: {app.platformName()}')
+    except Exception:
+        pass
     
     viewer = RocketViewerApp(rocket=rocket, environment=environment)
     viewer.show()
