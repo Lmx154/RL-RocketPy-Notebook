@@ -28,6 +28,13 @@ We now have a dedicated GUI application for viewing your rockets in 3D!
 uv run python launch_viewer.py
 ```
 
+If the viewer crashes on Linux with a Qt/Wayland window error (`BadWindow`),
+force the backend explicitly:
+
+```bash
+ROCKET_VIEWER_QPA_PLATFORM=xcb uv run python launch_viewer.py
+```
+
 This launches a user-friendly application where you can:
 - Select individual components to view (motor, nose cone, fins, etc.)
 - Rotate, pan, and zoom with your mouse

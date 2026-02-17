@@ -49,14 +49,16 @@ MOTOR_GRAIN_HEIGHT = 0.732  # m
 MOTOR_NOZZLE_RADIUS = 0.036750000000000005  # m
 MOTOR_THROAT_RADIUS = 0.0245  # m
 MOTOR_NOZZLE_POSITION = 0.351  # m
+MOTOR_TOTAL_LENGTH = 0.7622  # m (2736.70 -> 3498.90 mm)
 
 
 # ==================== ROCKET DIMENSIONS ====================
-ROCKET_BODY_RADIUS = 0.0777875  # m
+ROCKET_BODY_RADIUS = 0.078  # m (15.6 cm diameter per OpenRocket)
+BODYTUBE_TOTAL_LENGTH = 2.51460  # m (933.43 -> 3448.03 mm)
 
 # Nose Cone
-NOSECONE_LENGTH = 0.93345  # m
-NOSECONE_BASE_RADIUS = 0.0777875  # m
+NOSECONE_LENGTH = 0.93343  # m (nose tip -> body tube aft joint)
+NOSECONE_BASE_RADIUS = 0.078  # m
 
 # Fins
 FIN_COUNT = 4
@@ -66,16 +68,17 @@ FIN_SPAN = 0.1524  # m
 FIN_SWEEP_LENGTH = 0.254  # m
 
 # Boat Tail
-BOATTAIL_TOP_RADIUS = 0.0777875  # m
+BOATTAIL_TOP_RADIUS = 0.078  # m
 BOATTAIL_BOTTOM_RADIUS = 0.0635  # m
-BOATTAIL_LENGTH = 0.0508  # m
+BOATTAIL_LENGTH = 0.05087  # m (3448.03 -> 3498.90 mm)
 
 
 # ==================== ROCKET MASS PROPERTIES ====================
-ROCKET_DRY_MASS = 17.732  # kg
+ROCKET_DRY_MASS = 21.032  # kg (OpenRocket mass without motor: 21032 g)
 ROCKET_INERTIA_I = 0.115  # kg⋅m²
 ROCKET_INERTIA_Z = 21.424  # kg⋅m²
-ROCKET_COM_WITHOUT_MOTOR = -1.77  # m (177 cm from nose in CAD - negative = toward tail in tail_to_nose coordinate system)
+# Set to keep loaded CG aligned with OpenRocket CG=234 cm after precise motor repositioning
+ROCKET_COM_WITHOUT_MOTOR = -2.0302581347283253  # m
 
 
 # ==================== COMPONENT POSITIONS ====================
@@ -84,14 +87,23 @@ ROCKET_COM_WITHOUT_MOTOR = -1.77  # m (177 cm from nose in CAD - negative = towa
 # Nose at Z=0, components toward tail have NEGATIVE positions
 
 NOSECONE_POSITION = 0.0  # m
-FINS_POSITION = -2.592  # m
-BOATTAIL_POSITION = -2.8964  # m
-MOTOR_POSITION = -2.562  # m
+# Exact OpenRocket axial references (from nose tip, tailward negative):
+# - Nosecone/body joint: 933.43 mm
+# - Motor top (forward end): 2736.70 mm
+# - Fin top (forward end): 3143.30 mm
+# - Body tube aft / boattail joint: 3448.03 mm
+# - Fin bottom (aft end): 3448.10 mm
+# - Rocket end (boattail/motor aft end): 3498.90 mm
+BOATTAIL_POSITION = -3.44803  # m
+FINS_POSITION = -3.14330  # m
+# RocketPy `add_motor(position=...)` uses motor reference position, not forward end.
+# Align motor aft end flush with rocket end using nozzle offset.
+MOTOR_POSITION = -3.49890 + MOTOR_NOZZLE_POSITION  # m
 
 
 # ==================== RAIL BUTTON POSITIONS ====================
-UPPER_BUTTON_POSITION = -1.7778  # m
-LOWER_BUTTON_POSITION = -1.3906  # m
+UPPER_BUTTON_POSITION = -2.59  # m (launch lug fwd at 259 cm from nose)
+LOWER_BUTTON_POSITION = -3.34  # m (launch lug 2 at 334 cm from nose)
 BUTTON_ANGULAR_POSITION = 60.0  # degrees
 
 
