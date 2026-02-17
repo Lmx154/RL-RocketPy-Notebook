@@ -52,11 +52,12 @@ MOTOR_NOZZLE_POSITION = 0.351  # m
 
 
 # ==================== ROCKET DIMENSIONS ====================
-ROCKET_BODY_RADIUS = 0.0777875  # m
+ROCKET_BODY_RADIUS = 0.078  # m (15.6 cm diameter per OpenRocket)
+BODYTUBE_TOTAL_LENGTH = (122 + 122 + 7.62) / 100  # m (251.62 cm)
 
 # Nose Cone
 NOSECONE_LENGTH = 0.93345  # m
-NOSECONE_BASE_RADIUS = 0.0777875  # m
+NOSECONE_BASE_RADIUS = 0.078  # m
 
 # Fins
 FIN_COUNT = 4
@@ -66,16 +67,17 @@ FIN_SPAN = 0.1524  # m
 FIN_SWEEP_LENGTH = 0.254  # m
 
 # Boat Tail
-BOATTAIL_TOP_RADIUS = 0.0777875  # m
+BOATTAIL_TOP_RADIUS = 0.078  # m
 BOATTAIL_BOTTOM_RADIUS = 0.0635  # m
 BOATTAIL_LENGTH = 0.0508  # m
 
 
 # ==================== ROCKET MASS PROPERTIES ====================
-ROCKET_DRY_MASS = 17.732  # kg
+ROCKET_DRY_MASS = 21.032  # kg (OpenRocket mass without motor: 21032 g)
 ROCKET_INERTIA_I = 0.115  # kg⋅m²
 ROCKET_INERTIA_Z = 21.424  # kg⋅m²
-ROCKET_COM_WITHOUT_MOTOR = -1.77  # m (177 cm from nose in CAD - negative = toward tail in tail_to_nose coordinate system)
+# Set to match OpenRocket CG=234 cm with motor loaded at t=0 using current motor geometry/mass
+ROCKET_COM_WITHOUT_MOTOR = -2.0296638781480913  # m
 
 
 # ==================== COMPONENT POSITIONS ====================
@@ -84,14 +86,16 @@ ROCKET_COM_WITHOUT_MOTOR = -1.77  # m (177 cm from nose in CAD - negative = towa
 # Nose at Z=0, components toward tail have NEGATIVE positions
 
 NOSECONE_POSITION = 0.0  # m
-FINS_POSITION = -2.592  # m
-BOATTAIL_POSITION = -2.8964  # m
-MOTOR_POSITION = -2.562  # m
+BOATTAIL_POSITION = NOSECONE_POSITION - NOSECONE_LENGTH - BODYTUBE_TOTAL_LENGTH  # m
+# Place fin trailing (wide/root) edge flush with body tube end (boattail start)
+FINS_POSITION = BOATTAIL_POSITION + FIN_ROOT_CHORD  # m
+# Place motor/nozzle end flush with boattail aft end
+MOTOR_POSITION = BOATTAIL_POSITION - BOATTAIL_LENGTH + MOTOR_NOZZLE_POSITION  # m
 
 
 # ==================== RAIL BUTTON POSITIONS ====================
-UPPER_BUTTON_POSITION = -1.7778  # m
-LOWER_BUTTON_POSITION = -1.3906  # m
+UPPER_BUTTON_POSITION = -2.59  # m (launch lug fwd at 259 cm from nose)
+LOWER_BUTTON_POSITION = -3.34  # m (launch lug 2 at 334 cm from nose)
 BUTTON_ANGULAR_POSITION = 60.0  # degrees
 
 
