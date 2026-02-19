@@ -170,25 +170,24 @@ GNSS_ALTITUDE_ACCURACY = 5.0  # meters - vertical accuracy
 def load_drag_coefficients(base_path='../../data'):
     """
     Load drag coefficients from CSV file.
-    
+
     Args:
         base_path: Path to the data directory relative to this file
-        
+
     Returns:
         tuple: (cd_power_off, cd_power_on) as numpy arrays
     """
     cd_clean_path = os.path.join(base_path, 'drag_curve_clean.csv')
-    
-    # Try relative path first, then absolute path for launcher
+
+    # Try relative path first, then project-root path
     if not os.path.exists(cd_clean_path):
-        # Try from project root for launch_viewer.py
         cd_clean_path = os.path.join('data', 'drag_curve_clean.csv')
-    
+
     if not os.path.exists(cd_clean_path):
         # Fallback to default values if file not found
-        print(f"Warning: Could not find drag_curve_clean.csv, using default values")
-        M_arr = np.array([0.0, 0.5, 0.9, 1.0, 1.2, 2.0, 3.0])
-        Cd_arr = np.array([0.45, 0.50, 0.55, 0.75, 0.65, 0.50, 0.45])
+        print("Warning: Could not find drag_curve_clean.csv, using default values")
+        M_arr = np.array([0.0, 0.5, 0.9, 1.0, 1.2, 2.0, 3.0], dtype=float)
+        Cd_arr = np.array([0.45, 0.50, 0.55, 0.75, 0.65, 0.50, 0.45], dtype=float)
     else:
         M_list, Cd_list = [], []
         with open(cd_clean_path, 'r', newline='') as f:
@@ -201,17 +200,16 @@ def load_drag_coefficients(base_path='../../data'):
                     continue
                 M_list.append(M)
                 Cd_list.append(Cd)
-        
+
         M_arr = np.array(M_list, dtype=float)
         Cd_arr = np.array(Cd_list, dtype=float)
         order = np.argsort(M_arr)
         M_arr, Cd_arr = M_arr[order], Cd_arr[order]
-    
+
     cd_power_off = np.column_stack([M_arr, Cd_arr])
     cd_power_on = np.column_stack([M_arr, np.maximum(0.0, Cd_arr - 0.03)])
-    
-    return cd_power_off, cd_power_on
 
+    return cd_power_off, cd_power_on
 
 def create_environment(use_forecast=True):
     """
