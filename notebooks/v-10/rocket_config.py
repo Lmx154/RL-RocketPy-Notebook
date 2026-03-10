@@ -127,7 +127,7 @@ MAX_SIMULATION_TIME = 600  # seconds
 
 # ==================== SENSOR PARAMETERS ====================
 # Position of sensor suite (from nose tip, in tail_to_nose coordinate system)
-SENSOR_POSITION = -1.5  # m (negative = toward tail, mounted near center of rocket)
+SENSOR_POSITION = -2.65  # m (negative = toward tail, mounted near static center of pressure)
 
 # Sensor orientation: (0, 0, 0) means aligned with rocket body axes
 # X-axis: perpendicular to rocket longitudinal axis
