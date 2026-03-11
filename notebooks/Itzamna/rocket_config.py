@@ -1,7 +1,7 @@
 """
-V-10 Rocket Configuration Module
+Itzamna Rocket Configuration Module
 
-This module contains all configuration parameters for the V-10 rocket.
+This module contains all configuration parameters for the Itzamna rocket.
 It serves as a single source of truth for both the flight simulation notebook
 and the 3D viewer application, ensuring consistency between visualization
 and simulation.
@@ -22,7 +22,7 @@ from rocketpy.sensors import Accelerometer, Gyroscope, Barometer, GnssReceiver
 
 
 # ==================== LAUNCH SITE CONFIGURATIONS ====================
-# V-10 Mission Launch Sites
+# Itzamna Mission Launch Sites
 
 # Launch Site 1: Rocket Ranch - Seymour, Texas (Primary Testing Location)
 ROCKET_RANCH_LATITUDE = 33.49862509998744   # degrees North
@@ -294,7 +294,7 @@ def create_fins():
         span=FIN_SPAN,
         sweep_length=FIN_SWEEP_LENGTH,
         rocket_radius=ROCKET_BODY_RADIUS,
-        name="CF Trapezoidal (approx from V-10)",
+        name="CF Trapezoidal (approx from Itzamna)",
     )
 
 
@@ -356,7 +356,7 @@ def create_accelerometer():
         random_walk_variance=ACCEL_RANDOM_WALK_VARIANCE,
         constant_bias=ACCEL_CONSTANT_BIAS,
         consider_gravity=ACCEL_CONSIDER_GRAVITY,
-        name='V-10 Accelerometer',
+        name='Itzamna Accelerometer',
     )
     return accelerometer
 
@@ -377,7 +377,7 @@ def create_gyroscope():
         random_walk_density=GYRO_RANDOM_WALK_DENSITY,
         random_walk_variance=GYRO_RANDOM_WALK_VARIANCE,
         constant_bias=GYRO_CONSTANT_BIAS,
-        name='V-10 Gyroscope',
+        name='Itzamna Gyroscope',
     )
     return gyroscope
 
@@ -397,7 +397,7 @@ def create_barometer():
         random_walk_density=BARO_RANDOM_WALK_DENSITY,
         random_walk_variance=BARO_RANDOM_WALK_VARIANCE,
         constant_bias=BARO_CONSTANT_BIAS,
-        name='V-10 Barometer',
+        name='Itzamna Barometer',
     )
     return barometer
 
@@ -413,14 +413,14 @@ def create_gnss():
         sampling_rate=GNSS_SAMPLING_RATE,
         position_accuracy=GNSS_POSITION_ACCURACY,
         altitude_accuracy=GNSS_ALTITUDE_ACCURACY,
-        name='V-10 GNSS',
+        name='Itzamna GNSS',
     )
     return gnss
 
 
 def create_sensors():
     """
-    Create all sensors for the V-10 rocket.
+    Create all sensors for the Itzamna rocket.
     
     Returns:
         dict: Dictionary containing all sensors with keys:
@@ -436,7 +436,7 @@ def create_sensors():
 
 def create_rocket(include_parachutes=True, include_sensors=True, drag_data_path='../../data'):
     """
-    Create the complete V-10 rocket assembly.
+    Create the complete Itzamna rocket assembly.
     
     Args:
         include_parachutes: Whether to add parachutes (default: True)
@@ -497,7 +497,7 @@ def create_rocket(include_parachutes=True, include_sensors=True, drag_data_path=
 
 if __name__ == "__main__":
     # Test configuration by creating rocket
-    print("Testing V-10 rocket configuration...")
+    print("Testing Itzamna rocket configuration...")
     rocket = create_rocket()
     print("✓ Rocket created successfully")
     print(f"  - Dry mass: {rocket.mass:.3f} kg")

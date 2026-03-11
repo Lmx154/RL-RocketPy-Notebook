@@ -1,7 +1,7 @@
 """
 Rocket 3D Viewer Launcher
 
-Launch the Rocket 3D Viewer GUI application with the V-10 rocket.
+Launch the Rocket 3D Viewer GUI application with the Itzamna rocket.
 
 This launcher uses the shared rocket configuration from the notebook
 to ensure the 3D visualization matches the simulated rocket exactly.
@@ -46,8 +46,8 @@ def configure_qt_runtime() -> None:
 def main() -> int:
     configure_qt_runtime()
 
-    # Add notebooks/v-10 to path to import rocket_config
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "notebooks", "v-10"))
+    # Add notebooks/Itzamna to path to import rocket_config
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "notebooks", "Itzamna"))
 
     from rocket_config import (
         LAUNCH_LATITUDE,
@@ -58,7 +58,7 @@ def main() -> int:
     from sim import launch_gui
 
     print("=" * 60)
-    print("Rocket 3D Viewer - V-10 Rocket")
+    print("Rocket 3D Viewer - Itzamna Rocket")
     print("=" * 60)
     print()
 
@@ -68,7 +68,7 @@ def main() -> int:
     print()
 
     # ==================== CREATE ROCKET FROM SHARED CONFIG ====================
-    print("Creating V-10 rocket from notebook configuration...")
+    print("Creating Itzamna rocket from notebook configuration...")
     print("This ensures the 3D viewer shows the exact rocket from the simulation.")
     print()
 

@@ -1,8 +1,8 @@
-# V-10 Virtual Sensor Suite
+# Itzamna Virtual Sensor Suite
 
 ## Overview
 
-The V-10 rocket simulation now includes a comprehensive virtual sensor suite that models realistic flight instrumentation. All sensors are configured in `rocket_config.py` and can be easily added to the rocket in both the flight simulation notebook and 3D viewer.
+The Itzamna rocket simulation now includes a comprehensive virtual sensor suite that models realistic flight instrumentation. All sensors are configured in `rocket_config.py` and can be easily added to the rocket in both the flight simulation notebook and 3D viewer.
 
 ## Sensor Components
 
@@ -237,7 +237,7 @@ Potential improvements:
 
 ## Files Modified
 
-1. **`notebooks/v-10/rocket_config.py`**
+1. **`notebooks/Itzamna/rocket_config.py`**
    - Added sensor imports
    - Added sensor configuration constants
    - Added sensor factory functions (`create_accelerometer()`, `create_gyroscope()`, `create_barometer()`, `create_gnss()`)
@@ -245,7 +245,7 @@ Potential improvements:
    - Updated `create_rocket()` to accept `include_sensors` parameter
    - Added sensor attachment logic in `create_rocket()`
 
-2. **`notebooks/v-10/v-10_flight_sim.ipynb`**
+2. **`notebooks/Itzamna/Itzamna_flight_sim.ipynb`**
    - Added "Virtual Sensors" markdown cell explaining sensor suite
    - Added code cell to create and attach sensors
    - Added "Accessing Sensor Data" markdown cell with usage examples
@@ -267,4 +267,4 @@ For questions about the sensor implementation or configuration:
 ---
 
 *Last Updated: 2025-11-01*
-*V-10 Mission: Lonestar Cup 2026 & IREC 2026*
+*Itzamna Mission: Lonestar Cup 2026 & IREC 2026*

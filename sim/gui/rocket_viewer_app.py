@@ -551,7 +551,7 @@ class RocketViewerApp(QMainWindow):
             try:
                 import sys
                 import os
-                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'v-10'))
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'Itzamna'))
                 from rocket_config import create_environment, RAIL_LENGTH
                 self.environment = create_environment(use_forecast=False)
                 self.rail_length = RAIL_LENGTH
@@ -567,7 +567,7 @@ class RocketViewerApp(QMainWindow):
             try:
                 import sys
                 import os
-                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'v-10'))
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'Itzamna'))
                 from rocket_config import RAIL_LENGTH
                 self.rail_length = RAIL_LENGTH
             except:
@@ -943,7 +943,7 @@ class RocketViewerApp(QMainWindow):
         try:
             import sys
             import os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'v-10'))
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'Itzamna'))
             from rocket_config import UPPER_BUTTON_POSITION, LOWER_BUTTON_POSITION
             
             # Buttons are in tail_to_nose coordinates (negative = toward tail)

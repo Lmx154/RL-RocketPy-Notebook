@@ -65,7 +65,7 @@ The replay adapter is built around the current log format:
 For the current RocketPy exports, the GNSS columns are interpreted as latitude, longitude, and altitude, then converted into a local ENU frame relative to the first valid GNSS fix.
 
 
-## If you're going to work on the V-10 notebook
+## If you're going to work on the Itzamna notebook
 
 To launch the notebook, type
 
@@ -74,7 +74,7 @@ jupyter lab
 ```
 After opening Jupyter Lab in your web browser, navigate to notebooks on the left side bar of the user interface.
 
-Open notebooks folder and select the v-10 folder, then open the v-10_flight_sim file.
+Open notebooks folder and select the Itzamna folder, then open the Itzamna_flight_sim file.
 
 To clear things out and start anew, open the Kernel tab, select the Restart Kernel and Clear Outputs of All Cells... option
 
