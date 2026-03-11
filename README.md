@@ -41,6 +41,29 @@ This launches a user-friendly application where you can:
 - Export models to STL for 3D printing
 - View mesh statistics
 
+## State Estimation
+
+The repository now includes a reusable PX4-style state estimation framework under [sim/estimation](sim/estimation).
+
+It uses a strapdown inertial navigation system for the nominal state and a 15-state error-state Kalman filter for small-angle attitude, velocity, position, gyro bias, and accelerometer bias correction.
+
+You can replay the merged sensor CSV exports directly:
+
+```python
+from sim.estimation import run_telemetry_replay
+
+result = run_telemetry_replay("logs/virtual_sensors_full_rate_260310_113255.csv")
+estimates = result.estimates
+print(estimates[["time_s", "est_z_m", "est_vz_mps"]].tail())
+```
+
+The replay adapter is built around the current log format:
+- IMU prediction from `accelerometer_*` and `gyroscope_*`
+- Barometric altitude updates from `barometer_v1`
+- GNSS position updates from `gnss_x`, `gnss_y`, and `gnss_z`
+
+For the current RocketPy exports, the GNSS columns are interpreted as latitude, longitude, and altitude, then converted into a local ENU frame relative to the first valid GNSS fix.
+
 
 ## If you're going to work on the V-10 notebook
 
