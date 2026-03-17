@@ -24,6 +24,8 @@ class TelemetryDisplay(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._fresh_color = '#2EAD4A'
+        self._stale_color = '#E6C229'
         
         # Initialize UI
         self.init_ui()
@@ -45,8 +47,10 @@ class TelemetryDisplay(QWidget):
         # Time and Phase
         time_group = self._create_group('Time & Phase')
         self.time_label = QLabel('--:--')
+        self.step_label = QLabel('0 / 0')
         self.phase_label = QLabel('---')
         time_group.layout().addWidget(self._create_row('Time:', self.time_label))
+        time_group.layout().addWidget(self._create_row('Step:', self.step_label))
         time_group.layout().addWidget(self._create_row('Phase:', self.phase_label))
         layout.addWidget(time_group)
         
@@ -87,6 +91,18 @@ class TelemetryDisplay(QWidget):
         extra_group.layout().addWidget(self._create_row('Dyn. Pressure:', self.q_label))
         extra_group.layout().addWidget(self._create_row('Apogee:', self.apogee_label))
         layout.addWidget(extra_group)
+
+        # Raw virtual sensor values aligned to current kinematics step
+        sensor_group = self._create_group('Virtual Sensors')
+        self.accel_label = QLabel('---, ---, --- m/s²')
+        self.gyro_label = QLabel('---, ---, --- rad/s')
+        self.baro_label = QLabel('--- Pa')
+        self.sensor_gnss_label = QLabel('---, ---, ---')
+        sensor_group.layout().addWidget(self._create_row('Accel XYZ:', self.accel_label))
+        sensor_group.layout().addWidget(self._create_row('Gyro XYZ:', self.gyro_label))
+        sensor_group.layout().addWidget(self._create_row('Barometer:', self.baro_label))
+        sensor_group.layout().addWidget(self._create_row('GNSS LLA:', self.sensor_gnss_label))
+        layout.addWidget(sensor_group)
         
         # Spacer
         layout.addStretch()
@@ -136,7 +152,10 @@ class TelemetryDisplay(QWidget):
         # Time and Phase
         time_val = state.get('time', 0.0)
         t_final = state.get('t_final', 0.0)
+        step_index = int(state.get('step_index', 0))
+        total_steps = int(state.get('total_steps', 0))
         self.time_label.setText(f'{time_val:.2f} s / {t_final:.1f} s')
+        self.step_label.setText(f'{step_index + 1:,} / {total_steps:,}')
         self.phase_label.setText(state.get('phase', '---'))
         
         # Altitude and Velocity
@@ -180,10 +199,62 @@ class TelemetryDisplay(QWidget):
         
         self.q_label.setText(f'{q:.0f} Pa')
         self.apogee_label.setText(f'{apogee:,.0f} m')
+
+        sensors = state.get('sensors', {})
+        freshness = state.get('sensor_freshness', {})
+
+        ax = sensors.get('accelerometer_x')
+        ay = sensors.get('accelerometer_y')
+        az = sensors.get('accelerometer_z')
+        gx = sensors.get('gyroscope_x')
+        gy = sensors.get('gyroscope_y')
+        gz = sensors.get('gyroscope_z')
+        bp = sensors.get('barometer_v1')
+        glat = sensors.get('gnss_x')
+        glon = sensors.get('gnss_y')
+        galt = sensors.get('gnss_z')
+
+        self.accel_label.setText(
+            f'{self._fmt_signed(ax, 3)}, {self._fmt_signed(ay, 3)}, {self._fmt_signed(az, 3)}'
+        )
+        self.gyro_label.setText(
+            f'{self._fmt_signed(gx, 4)}, {self._fmt_signed(gy, 4)}, {self._fmt_signed(gz, 4)}'
+        )
+        self.baro_label.setText(self._fmt_plain(bp, 1, unit=' Pa'))
+        self.sensor_gnss_label.setText(
+            f'{self._fmt_plain(glat, 6)}, {self._fmt_plain(glon, 6)}, {self._fmt_plain(galt, 2)}'
+        )
+
+        accel_fresh = bool(freshness.get('accelerometer_x', False))
+        gyro_fresh = bool(freshness.get('gyroscope_x', False))
+        baro_fresh = bool(freshness.get('barometer_v1', False))
+        gnss_fresh = bool(freshness.get('gnss_x', False))
+
+        self._set_sensor_freshness_style(self.accel_label, accel_fresh)
+        self._set_sensor_freshness_style(self.gyro_label, gyro_fresh)
+        self._set_sensor_freshness_style(self.baro_label, baro_fresh)
+        self._set_sensor_freshness_style(self.sensor_gnss_label, gnss_fresh)
+
+    def _set_sensor_freshness_style(self, label: QLabel, is_fresh: bool) -> None:
+        color = self._fresh_color if is_fresh else self._stale_color
+        label.setStyleSheet(f'font-family: monospace; font-size: 10pt; color: {color};')
+
+    @staticmethod
+    def _fmt_signed(value: Any, decimals: int) -> str:
+        if value is None:
+            return '---'
+        return f'{float(value):+.{decimals}f}'
+
+    @staticmethod
+    def _fmt_plain(value: Any, decimals: int, unit: str = '') -> str:
+        if value is None:
+            return f'---{unit}'
+        return f'{float(value):.{decimals}f}{unit}'
     
     def _clear_display(self):
         """Clear all telemetry values."""
         self.time_label.setText('--:--')
+        self.step_label.setText('0 / 0')
         self.phase_label.setText('---')
         self.altitude_label.setText('--- m')
         self.vz_label.setText('--- m/s')
@@ -196,3 +267,11 @@ class TelemetryDisplay(QWidget):
         self.psi_label.setText('---°')
         self.q_label.setText('--- Pa')
         self.apogee_label.setText('--- m')
+        self.accel_label.setText('---, ---, --- m/s²')
+        self.gyro_label.setText('---, ---, --- rad/s')
+        self.baro_label.setText('--- Pa')
+        self.sensor_gnss_label.setText('---, ---, ---')
+        self._set_sensor_freshness_style(self.accel_label, False)
+        self._set_sensor_freshness_style(self.gyro_label, False)
+        self._set_sensor_freshness_style(self.baro_label, False)
+        self._set_sensor_freshness_style(self.sensor_gnss_label, False)

@@ -22,19 +22,20 @@ Usage:
 import sys
 import os
 import logging
+from pathlib import Path
 import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGroupBox, QCheckBox, QTextEdit, QSplitter,
-    QFileDialog, QMessageBox, QFrame, QRadioButton, QSlider, QProgressDialog,
+    QFileDialog, QMessageBox, QFrame, QRadioButton, QSlider,
     QScrollArea
 )
-from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtCore import Qt, Slot, QEvent
 from pyvistaqt import QtInteractor
 import pyvista as pv
 
 from ..rendering.renderer import RocketRenderer
-from ..simulation import SimulationController, quaternion_to_matrix
+from ..simulation import CsvReplayController, load_replay_pair, quaternion_to_matrix
 from ..simulation.quaternion_utils import interpolate_quaternion
 from .telemetry_display import TelemetryDisplay
 
@@ -42,43 +43,6 @@ from .telemetry_display import TelemetryDisplay
 # These are harmless cleanup warnings from VTK internal objects
 pv.set_error_output_file('NUL' if sys.platform == 'win32' else '/dev/null')
 logging.getLogger('vtkmodules').setLevel(logging.CRITICAL)
-
-
-class FlightComputationThread(QThread):
-    """
-    Background thread for computing RocketPy Flight simulation.
-    
-    This prevents the GUI from freezing during the 1-5 second computation.
-    """
-    
-    finished = Signal(object)  # Emits Flight object when done
-    error = Signal(str)  # Emits error message if computation fails
-    
-    def __init__(self, rocket, environment, rail_length, inclination, heading):
-        super().__init__()
-        self.rocket = rocket
-        self.environment = environment
-        self.rail_length = rail_length
-        self.inclination = inclination
-        self.heading = heading
-    
-    def run(self):
-        """Run Flight simulation in background."""
-        try:
-            from rocketpy import Flight
-            
-            flight = Flight(
-                rocket=self.rocket,
-                environment=self.environment,
-                rail_length=self.rail_length,
-                inclination=self.inclination,
-                heading=self.heading,
-                max_time=600,  # 10 minutes max
-            )
-            
-            self.finished.emit(flight)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class RocketViewerApp(QMainWindow):
@@ -92,13 +56,12 @@ class RocketViewerApp(QMainWindow):
     - Viewing mesh statistics
     """
     
-    def __init__(self, rocket, environment=None):
+    def __init__(self, rocket):
         """
         Initialize the Rocket Viewer application.
         
         Args:
             rocket: RocketPy Rocket object to load
-            environment: Optional RocketPy Environment for simulation
         """
         super().__init__()
         
@@ -111,10 +74,9 @@ class RocketViewerApp(QMainWindow):
         
         # Simulation state
         self.mode = 'static'  # 'static' or 'simulation'
-        self.environment = environment
-        self.flight = None
         self.simulation_controller = None
-        self.flight_computation_thread = None
+        self.replay_sensor_path = None
+        self.replay_kinematics_path = None
         self.rail_length = 5.1816  # Default, will be updated from config
         
         # Original rocket mesh (cached for static mode)
@@ -140,6 +102,7 @@ class RocketViewerApp(QMainWindow):
         self.auto_tracking_enabled = True
         self.last_camera_position = None
         self.user_is_interacting = False
+        self.replay_overlay_visible = True
         
         # Setup UI
         self.init_ui()
@@ -304,12 +267,16 @@ class RocketViewerApp(QMainWindow):
         group = QGroupBox('Simulation Controls')
         layout = QVBoxLayout()
         
-        # Compute Flight button
-        self.compute_flight_btn = QPushButton('🚀 Compute Flight')
-        self.compute_flight_btn.setMinimumHeight(45)
-        self.compute_flight_btn.setStyleSheet('font-weight: bold; font-size: 11pt;')
-        self.compute_flight_btn.clicked.connect(self.on_compute_flight_clicked)
-        layout.addWidget(self.compute_flight_btn)
+        # Replay loading
+        self.load_replay_btn = QPushButton('📂 Load Replay CSV Pair')
+        self.load_replay_btn.setMinimumHeight(45)
+        self.load_replay_btn.setStyleSheet('font-weight: bold; font-size: 11pt;')
+        self.load_replay_btn.clicked.connect(self.on_load_replay_clicked)
+        layout.addWidget(self.load_replay_btn)
+
+        self.replay_source_label = QLabel('Replay source: not loaded')
+        self.replay_source_label.setWordWrap(True)
+        layout.addWidget(self.replay_source_label)
         
         # Auto-tracking toggle button
         self.auto_tracking_btn = QPushButton('📹 Auto-Track: ON')
@@ -318,64 +285,10 @@ class RocketViewerApp(QMainWindow):
         self.auto_tracking_btn.clicked.connect(self.on_auto_tracking_toggled)
         self.auto_tracking_btn.setStyleSheet('font-weight: bold;')
         layout.addWidget(self.auto_tracking_btn)
-        
-        # Playback controls
-        playback_layout = QHBoxLayout()
-        
-        self.start_btn = QPushButton('▶ Start')
-        self.start_btn.clicked.connect(self.on_start_clicked)
-        self.start_btn.setEnabled(False)
-        playback_layout.addWidget(self.start_btn)
-        
-        self.pause_btn = QPushButton('⏸ Pause')
-        self.pause_btn.clicked.connect(self.on_pause_clicked)
-        self.pause_btn.setEnabled(False)
-        playback_layout.addWidget(self.pause_btn)
-        
-        self.stop_btn = QPushButton('⏹ Stop')
-        self.stop_btn.clicked.connect(self.on_stop_clicked)
-        self.stop_btn.setEnabled(False)
-        playback_layout.addWidget(self.stop_btn)
-        
-        layout.addLayout(playback_layout)
-        
-        # Timeline slider
-        timeline_group = QGroupBox('Timeline')
-        timeline_layout = QVBoxLayout()
-        
-        self.timeline_slider = QSlider(Qt.Horizontal)
-        self.timeline_slider.setMinimum(0)
-        self.timeline_slider.setMaximum(1000)  # 0.1% resolution
-        self.timeline_slider.setValue(0)
-        self.timeline_slider.sliderPressed.connect(self.on_timeline_pressed)
-        self.timeline_slider.sliderReleased.connect(self.on_timeline_released)
-        self.timeline_slider.valueChanged.connect(self.on_timeline_changed)
-        timeline_layout.addWidget(self.timeline_slider)
-        
-        self.timeline_label = QLabel('Time: 0.0 s / 0.0 s')
-        self.timeline_label.setAlignment(Qt.AlignCenter)
-        timeline_layout.addWidget(self.timeline_label)
-        
-        timeline_group.setLayout(timeline_layout)
-        layout.addWidget(timeline_group)
-        
-        # Speed control
-        speed_group = QGroupBox('Playback Speed')
-        speed_layout = QVBoxLayout()
-        
-        self.speed_slider = QSlider(Qt.Horizontal)
-        self.speed_slider.setMinimum(1)  # 0.1x
-        self.speed_slider.setMaximum(100)  # 10x
-        self.speed_slider.setValue(10)  # 1.0x
-        self.speed_slider.valueChanged.connect(self.on_speed_changed)
-        speed_layout.addWidget(self.speed_slider)
-        
-        self.speed_label = QLabel('Speed: 1.0x')
-        self.speed_label.setAlignment(Qt.AlignCenter)
-        speed_layout.addWidget(self.speed_label)
-        
-        speed_group.setLayout(speed_layout)
-        layout.addWidget(speed_group)
+
+        self.overlay_toggle_btn = QPushButton('Hide Replay Overlay')
+        self.overlay_toggle_btn.clicked.connect(self.on_overlay_toggle_clicked)
+        layout.addWidget(self.overlay_toggle_btn)
         
         group.setLayout(layout)
         return group
@@ -414,6 +327,7 @@ class RocketViewerApp(QMainWindow):
     def create_viewer_panel(self) -> QWidget:
         """Create the right panel with 3D viewer."""
         panel = QWidget()
+        self.viewer_panel = panel
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         
@@ -434,8 +348,147 @@ class RocketViewerApp(QMainWindow):
         # Connect interaction events to detect user camera control
         self.plotter.iren.add_observer('StartInteractionEvent', self._on_user_interaction_start)
         self.plotter.iren.add_observer('EndInteractionEvent', self._on_user_interaction_end)
+
+        self._create_replay_overlay(panel)
+        panel.installEventFilter(self)
+        self._position_replay_overlay_widgets()
         
         return panel
+
+    def _create_replay_overlay(self, parent: QWidget) -> None:
+        """Create semi-transparent replay controls overlay on top of the 3D viewer."""
+        self.replay_overlay = QFrame(parent)
+        self.replay_overlay.setObjectName('replayOverlay')
+        self.replay_overlay.setStyleSheet(
+            '#replayOverlay {'
+            'background-color: rgba(24, 24, 24, 165);'
+            'border: 1px solid rgba(230, 230, 230, 90);'
+            'border-radius: 10px;'
+            '}'
+            '#replayOverlay QLabel { color: #f0f0f0; }'
+            '#replayOverlay QPushButton { background-color: rgba(255, 255, 255, 40); color: #f6f6f6; }'
+            '#replayOverlay QPushButton:disabled { color: rgba(246, 246, 246, 110); }'
+        )
+
+        overlay_layout = QVBoxLayout(self.replay_overlay)
+        overlay_layout.setContentsMargins(10, 8, 10, 8)
+        overlay_layout.setSpacing(8)
+
+        header_layout = QHBoxLayout()
+        header_label = QLabel('Replay Controls')
+        header_label.setStyleSheet('font-weight: bold; color: #f0f0f0;')
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        self.hide_overlay_btn = QPushButton('Hide')
+        self.hide_overlay_btn.clicked.connect(lambda: self.set_replay_overlay_visibility(False))
+        header_layout.addWidget(self.hide_overlay_btn)
+        overlay_layout.addLayout(header_layout)
+
+        playback_layout = QHBoxLayout()
+        self.prev_step_btn = QPushButton('◀ Prev')
+        self.prev_step_btn.clicked.connect(self.on_prev_step_clicked)
+        self.prev_step_btn.setEnabled(False)
+        playback_layout.addWidget(self.prev_step_btn)
+
+        self.start_btn = QPushButton('▶ Start')
+        self.start_btn.clicked.connect(self.on_start_clicked)
+        self.start_btn.setEnabled(False)
+        playback_layout.addWidget(self.start_btn)
+
+        self.pause_btn = QPushButton('⏸ Pause')
+        self.pause_btn.clicked.connect(self.on_pause_clicked)
+        self.pause_btn.setEnabled(False)
+        playback_layout.addWidget(self.pause_btn)
+
+        self.stop_btn = QPushButton('⏹ Stop')
+        self.stop_btn.clicked.connect(self.on_stop_clicked)
+        self.stop_btn.setEnabled(False)
+        playback_layout.addWidget(self.stop_btn)
+
+        self.next_step_btn = QPushButton('Next ▶')
+        self.next_step_btn.clicked.connect(self.on_next_step_clicked)
+        self.next_step_btn.setEnabled(False)
+        playback_layout.addWidget(self.next_step_btn)
+        overlay_layout.addLayout(playback_layout)
+
+        speed_layout = QHBoxLayout()
+        speed_caption = QLabel('Speed')
+        speed_caption.setMinimumWidth(48)
+        speed_layout.addWidget(speed_caption)
+
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setMinimum(1)  # 0.1x
+        self.speed_slider.setMaximum(100)  # 10x
+        self.speed_slider.setValue(10)  # 1.0x
+        self.speed_slider.valueChanged.connect(self.on_speed_changed)
+        speed_layout.addWidget(self.speed_slider)
+
+        self.speed_label = QLabel('1.0x')
+        self.speed_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.speed_label.setMinimumWidth(48)
+        speed_layout.addWidget(self.speed_label)
+        overlay_layout.addLayout(speed_layout)
+
+        self.timeline_slider = QSlider(Qt.Horizontal)
+        self.timeline_slider.setMinimum(0)
+        self.timeline_slider.setMaximum(0)
+        self.timeline_slider.setSingleStep(1)
+        self.timeline_slider.setPageStep(100)
+        self.timeline_slider.setValue(0)
+        self.timeline_slider.sliderPressed.connect(self.on_timeline_pressed)
+        self.timeline_slider.sliderReleased.connect(self.on_timeline_released)
+        self.timeline_slider.valueChanged.connect(self.on_timeline_changed)
+        self.timeline_slider.setEnabled(False)
+        overlay_layout.addWidget(self.timeline_slider)
+
+        self.timeline_label = QLabel('Step: 0 / 0 | Time: 0.0 s / 0.0 s')
+        self.timeline_label.setAlignment(Qt.AlignCenter)
+        overlay_layout.addWidget(self.timeline_label)
+
+        self.show_overlay_btn = QPushButton('Show Replay Overlay', parent)
+        self.show_overlay_btn.clicked.connect(lambda: self.set_replay_overlay_visibility(True))
+        self.show_overlay_btn.setVisible(False)
+        self.show_overlay_btn.setStyleSheet('background-color: rgba(24, 24, 24, 165); color: #f0f0f0;')
+
+        self.set_replay_overlay_visibility(True)
+
+    def _position_replay_overlay_widgets(self) -> None:
+        """Position overlay widgets relative to current 3D panel size."""
+        if not hasattr(self, 'viewer_panel') or not hasattr(self, 'replay_overlay'):
+            return
+
+        panel_width = max(0, self.viewer_panel.width())
+        margin = 14
+
+        overlay_width = max(430, min(760, panel_width - (2 * margin)))
+        self.replay_overlay.setFixedWidth(overlay_width)
+        self.replay_overlay.adjustSize()
+        self.replay_overlay.move(margin, margin)
+
+        self.show_overlay_btn.adjustSize()
+        self.show_overlay_btn.move(
+            max(margin, panel_width - self.show_overlay_btn.width() - margin),
+            margin,
+        )
+
+    def set_replay_overlay_visibility(self, visible: bool) -> None:
+        """Set replay overlay visibility while preserving simulation-mode gating."""
+        self.replay_overlay_visible = bool(visible)
+        is_sim_mode = self.mode == 'simulation'
+        self.replay_overlay.setVisible(is_sim_mode and self.replay_overlay_visible)
+        self.show_overlay_btn.setVisible(is_sim_mode and (not self.replay_overlay_visible))
+        if hasattr(self, 'overlay_toggle_btn'):
+            self.overlay_toggle_btn.setText('Hide Replay Overlay' if self.replay_overlay_visible else 'Show Replay Overlay')
+        self._position_replay_overlay_widgets()
+
+    def on_overlay_toggle_clicked(self) -> None:
+        """Toggle replay overlay visibility from the left-side controls panel."""
+        self.set_replay_overlay_visibility(not self.replay_overlay_visible)
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, 'viewer_panel', None) and event.type() == QEvent.Resize:
+            self._position_replay_overlay_widgets()
+        return super().eventFilter(watched, event)
     
     def on_component_checkbox_changed(self, state: int):
         """Handle component checkbox toggle."""
@@ -508,6 +561,7 @@ class RocketViewerApp(QMainWindow):
             self.static_button_group.setVisible(True)
             self.telemetry_widget.setVisible(False)
             self.mesh_info_group.setVisible(True)
+            self.set_replay_overlay_visibility(self.replay_overlay_visible)
             
             # Stop simulation if running
             if self.simulation_controller and self.simulation_controller.is_playing:
@@ -525,6 +579,7 @@ class RocketViewerApp(QMainWindow):
             self.static_button_group.setVisible(False)
             self.telemetry_widget.setVisible(True)
             self.mesh_info_group.setVisible(False)
+            self.set_replay_overlay_visibility(self.replay_overlay_visible)
             
             # Clear actors and reset state
             self.rocket_actors = {}
@@ -538,103 +593,93 @@ class RocketViewerApp(QMainWindow):
             
             # Clear static view
             self.clear_viewer()
-            
-            # Show instruction if no flight computed yet
-            if self.flight is None:
-                self.statusBar().showMessage('Click "Compute Flight" to run simulation')
-    
-    def on_compute_flight_clicked(self):
-        """Handle compute flight button click."""
-        # Check if environment is available
-        if self.environment is None:
-            # Create default environment
-            try:
-                import sys
-                import os
-                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'Itzamna'))
-                from rocket_config import create_environment, RAIL_LENGTH
-                self.environment = create_environment(use_forecast=False)
-                self.rail_length = RAIL_LENGTH
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    'No Environment',
-                    f'No environment configured. Please provide an Environment object.\n\nError: {str(e)}'
-                )
-                return
-        else:
-            # Try to get rail_length from config
-            try:
-                import sys
-                import os
-                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'notebooks', 'Itzamna'))
-                from rocket_config import RAIL_LENGTH
-                self.rail_length = RAIL_LENGTH
-            except:
-                self.rail_length = 5.1816  # Fallback default
-        
-        # Show progress dialog
-        progress = QProgressDialog('Computing flight trajectory...', None, 0, 0, self)
-        progress.setWindowTitle('Flight Simulation')
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setCancelButton(None)
-        progress.show()
-        
-        # Start computation thread
-        self.flight_computation_thread = FlightComputationThread(
-            rocket=self.rocket,
-            environment=self.environment,
-            rail_length=self.rail_length,
-            inclination=90.0,
-            heading=90.0
-        )
-        
-        self.flight_computation_thread.finished.connect(
-            lambda flight: self.on_flight_computed(flight, progress)
-        )
-        self.flight_computation_thread.error.connect(
-            lambda error: self.on_flight_error(error, progress)
-        )
-        
-        self.flight_computation_thread.start()
-        self.compute_flight_btn.setEnabled(False)
-    
-    @Slot(object, object)
-    def on_flight_computed(self, flight, progress_dialog):
-        """Handle successful flight computation."""
-        progress_dialog.close()
-        
-        self.flight = flight
-        
-        # Create simulation controller
-        self.simulation_controller = SimulationController(flight, update_rate=100.0)
-        self.simulation_controller.state_updated.connect(self.on_simulation_state_updated)
-        self.simulation_controller.progress_changed.connect(self.on_progress_changed)
-        
-        # Enable playback controls
-        self.start_btn.setEnabled(True)
-        self.compute_flight_btn.setEnabled(True)
-        
-        # Show flight info
-        self.statusBar().showMessage(
-            f'Flight computed: {flight.t_final:.1f}s duration, '
-            f'apogee {flight.apogee:.0f}m'
-        )
-        
-        # Initialize visualization at t=0
-        self.render_simulation_frame(self.simulation_controller.get_state_at_time(0.0))
-    
-    @Slot(str, object)
-    def on_flight_error(self, error, progress_dialog):
-        """Handle flight computation error."""
-        progress_dialog.close()
-        self.compute_flight_btn.setEnabled(True)
-        
-        QMessageBox.critical(
+
+            if self.simulation_controller is None:
+                self.load_replay_data()
+            else:
+                self.statusBar().showMessage('Replay loaded. Use the overlay controls for playback and stepping.')
+
+    def _default_logs_directory(self) -> Path:
+        return Path(__file__).resolve().parents[2] / 'logs'
+
+    def on_load_replay_clicked(self):
+        """Prompt for kinematics CSV, then load matching virtual sensors CSV."""
+        logs_dir = self._default_logs_directory()
+        kinematics_path, _ = QFileDialog.getOpenFileName(
             self,
-            'Flight Computation Error',
-            f'Failed to compute flight:\n{error}'
+            'Select flight kinematics CSV',
+            str(logs_dir),
+            'CSV Files (*.csv)',
         )
+        if not kinematics_path:
+            return
+
+        kinematics_file = Path(kinematics_path)
+        suffix = kinematics_file.stem.removeprefix('flight_kinematics_')
+        sensor_candidate = kinematics_file.with_name(f'virtual_sensors_full_rate_{suffix}.csv')
+
+        if sensor_candidate.exists():
+            sensor_path = str(sensor_candidate)
+        else:
+            sensor_path, _ = QFileDialog.getOpenFileName(
+                self,
+                'Select virtual sensors CSV',
+                str(logs_dir),
+                'CSV Files (*.csv)',
+            )
+            if not sensor_path:
+                return
+
+        self.load_replay_data(sensor_csv_path=sensor_path, kinematics_csv_path=str(kinematics_file))
+
+    def load_replay_data(self, sensor_csv_path: str | None = None, kinematics_csv_path: str | None = None):
+        """Load and wire synchronized kinematics/sensor replay data."""
+        try:
+            if self.simulation_controller and self.simulation_controller.is_playing:
+                self.simulation_controller.pause()
+
+            kinematics_df, sensors_df, sensor_path, kinematics_path = load_replay_pair(
+                logs_directory=self._default_logs_directory(),
+                sensor_csv_path=sensor_csv_path,
+                kinematics_csv_path=kinematics_csv_path,
+            )
+            self.replay_sensor_path = sensor_path
+            self.replay_kinematics_path = kinematics_path
+
+            self.simulation_controller = CsvReplayController(kinematics_df, sensors_df, update_rate=120.0)
+            self.simulation_controller.state_updated.connect(self.on_simulation_state_updated)
+            self.simulation_controller.progress_changed.connect(self.on_progress_changed)
+
+            self.start_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.prev_step_btn.setEnabled(True)
+            self.next_step_btn.setEnabled(True)
+            self.timeline_slider.setEnabled(True)
+            self.timeline_slider.setMinimum(0)
+            self.timeline_slider.setMaximum(self.simulation_controller.total_steps - 1)
+            self.timeline_slider.setValue(0)
+
+            self.replay_source_label.setText(
+                f'Replay source:\n- {kinematics_path.name}\n- {sensor_path.name}'
+            )
+
+            self.trajectory_points = []
+            self.rocket_actors = {}
+            self.trail_actor = None
+            self.trail_polydata = None
+            self.last_trajectory_point = None
+            self.last_state = None
+            self.current_display_state = None
+
+            self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
+            self.on_progress_changed(0.0)
+            self.statusBar().showMessage(
+                f'Loaded replay with {self.simulation_controller.total_steps:,} kinematics steps '
+                f'and {len(sensors_df):,} sensor rows'
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, 'Replay Load Error', f'Failed to load replay CSVs:\n{exc}')
     
     def on_start_clicked(self):
         """Handle start/resume button click."""
@@ -681,7 +726,7 @@ class RocketViewerApp(QMainWindow):
             self.plotter.add_camera_orientation_widget()
             
             # Re-initialize at t=0
-            self.render_simulation_frame(self.simulation_controller.get_state_at_time(0.0))
+            self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
     
     def on_timeline_pressed(self):
         """Handle timeline slider press (pause playback)."""
@@ -696,8 +741,27 @@ class RocketViewerApp(QMainWindow):
     def on_timeline_changed(self, value):
         """Handle timeline slider value change."""
         if self.simulation_controller and not self.simulation_controller.is_playing:
-            progress = value / 1000.0
-            self.simulation_controller.seek(progress, is_progress=True)
+            self.simulation_controller.seek(int(value), is_progress=False)
+
+    def on_prev_step_clicked(self):
+        """Move replay cursor to previous kinematics step."""
+        if not self.simulation_controller:
+            return
+        if self.simulation_controller.is_playing:
+            self.simulation_controller.pause()
+            self.start_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+        self.simulation_controller.seek(self.simulation_controller.index - 1, is_progress=False)
+
+    def on_next_step_clicked(self):
+        """Move replay cursor to next kinematics step."""
+        if not self.simulation_controller:
+            return
+        if self.simulation_controller.is_playing:
+            self.simulation_controller.pause()
+            self.start_btn.setEnabled(True)
+            self.pause_btn.setEnabled(False)
+        self.simulation_controller.seek(self.simulation_controller.index + 1, is_progress=False)
     
     def on_speed_changed(self, value):
         """Handle playback speed slider change."""
@@ -710,13 +774,22 @@ class RocketViewerApp(QMainWindow):
     @Slot(float)
     def on_progress_changed(self, progress):
         """Handle simulation progress update."""
-        # Update timeline slider
-        self.timeline_slider.setValue(int(progress * 1000))
-        
-        # Update time label
-        if self.flight:
-            current_time = progress * self.flight.t_final
-            self.timeline_label.setText(f'Time: {current_time:.2f} s / {self.flight.t_final:.1f} s')
+        del progress
+        if not self.simulation_controller:
+            return
+
+        time_info = self.simulation_controller.get_time_info()
+        index = self.simulation_controller.index
+        total = self.simulation_controller.total_steps
+
+        self.timeline_slider.blockSignals(True)
+        self.timeline_slider.setValue(index)
+        self.timeline_slider.blockSignals(False)
+
+        self.timeline_label.setText(
+            f'Step: {index + 1:,} / {total:,} | '
+            f'Time: {time_info["current_time"]:.3f} s / {time_info["t_final"]:.3f} s'
+        )
     
     @Slot(dict)
     def on_simulation_state_updated(self, state):
@@ -772,47 +845,36 @@ class RocketViewerApp(QMainWindow):
                 'mesh': filtered_mesh[key].copy()
             }
         
-        # Calculate bounding box based on trajectory if available
-        if self.flight:
-            # Get ground elevation from environment
-            if self.environment:
-                ground_elevation = self.environment.elevation
-            else:
-                ground_elevation = 0.0
-            
-            times = np.linspace(0, self.flight.t_final, 100)
-            x_vals = [self.flight.x(t) for t in times]
-            y_vals = [self.flight.y(t) for t in times]
-            z_vals = [self.flight.z(t) for t in times]
-            
-            # RocketPy z(t) gives altitude of rocket nose (coordinate origin)
-            # Our rocket extends from nose (0) to tail (~-2.9m in tail_to_nose coords)
-            # So the tail is ~2.9m below the reported z position
-            rocket_length = 2.9  # Approximate total rocket length in meters
-            
-            # Get trajectory bounds with margin
-            x_min, x_max = min(x_vals), max(x_vals)
-            y_min, y_max = min(y_vals), max(y_vals)
-            # Ground should be rocket_length below the minimum nose altitude
-            z_min = ground_elevation - rocket_length - 5  # Extra margin below rocket
-            z_max = max(z_vals)  # Highest nose position
-            
-            # Add 20% margin horizontally
+        # Calculate bounding box based on loaded replay trajectory
+        if self.simulation_controller and self.simulation_controller.total_steps > 0:
+            kinematics = self.simulation_controller.kinematics
+            x_vals = kinematics['x_m'].to_numpy(dtype=float)
+            y_vals = kinematics['y_m'].to_numpy(dtype=float)
+            z_vals = kinematics['z_m'].to_numpy(dtype=float)
+
+            ground_elevation = float(np.nanmin(z_vals))
+            rocket_length = 2.9
+
+            x_min, x_max = float(np.min(x_vals)), float(np.max(x_vals))
+            y_min, y_max = float(np.min(y_vals)), float(np.max(y_vals))
+            z_min = ground_elevation - rocket_length - 5.0
+            z_max = float(np.max(z_vals))
+
             margin = 0.2
-            x_margin = (x_max - x_min) * margin
-            y_margin = (y_max - y_min) * margin
-            z_margin = 50  # Fixed vertical margin above apogee
-            
+            x_margin = max(5.0, (x_max - x_min) * margin)
+            y_margin = max(5.0, (y_max - y_min) * margin)
+            z_margin = 50.0
+
             x_min -= x_margin
             x_max += x_margin
             y_min -= y_margin
             y_max += y_margin
             z_max += z_margin
-            
-            center = [(x_min + x_max) / 2, (y_min + y_max) / 2, (z_min + z_max) / 2]
+
+            center = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0, (z_min + z_max) / 2.0]
         else:
             # Default bounds
-            ground_elevation = 0.0 if not self.environment else self.environment.elevation
+            ground_elevation = 0.0
             rocket_length = 2.9
             x_min, x_max = -500, 500
             y_min, y_max = -500, 500
@@ -1272,14 +1334,12 @@ class RocketViewerApp(QMainWindow):
         event.accept()
 
 
-def launch_gui(rocket, environment=None):
+def launch_gui(rocket):
     """
     Launch the Rocket 3D Viewer application.
     
     Args:
         rocket: RocketPy Rocket object to visualize
-        environment: Optional RocketPy Environment for simulation mode
-    
     Returns:
         Application exit code
     """
@@ -1292,7 +1352,7 @@ def launch_gui(rocket, environment=None):
     except Exception:
         pass
     
-    viewer = RocketViewerApp(rocket=rocket, environment=environment)
+    viewer = RocketViewerApp(rocket=rocket)
     viewer.show()
     
     return app.exec_()

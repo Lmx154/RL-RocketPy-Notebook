@@ -28,6 +28,8 @@ We now have a dedicated GUI application for viewing your rockets in 3D!
 uv run python launch_viewer.py
 ```
 
+The viewer is kinematics-driven in simulation mode and no longer loads environment/forecast data.
+
 If the viewer crashes on Linux with a Qt/Wayland window error (`BadWindow`),
 force the backend explicitly:
 
@@ -64,27 +66,34 @@ The replay adapter is built around the current log format:
 
 For the current RocketPy exports, the GNSS columns are interpreted as latitude, longitude, and altitude, then converted into a local ENU frame relative to the first valid GNSS fix.
 
-## SITL WebSocket Replay Bridge
+## SITL UDP Replay Bridge
 
-Use the SITL bridge when your firmware in software-in-the-loop needs synchronized replay time and virtual sensors from the same CSV files used by the estimator.
+The SITL bridge is layered so the CSV replay core is transport-agnostic, UDP is the command/output transport, and protocol adapters can be swapped independently.
 
-Start the server (defaults to latest `logs/virtual_sensors_full_rate_*.csv`):
+Current layers:
+- Replay core: reads `virtual_sensors_full_rate_*.csv` and maintains replay time/index state.
+- UDP transport: listens for replay control commands and emits datagrams to firmware/SITL targets.
+- Protocol adapters:
+	- JSON UDP adapter for debugging or custom glue code.
+	- MAVLink adapter based on the standard `common.xml` dialect via `pymavlink.dialects.v20.common`.
+
+Start the UDP bridge with MAVLink output enabled by default:
 
 ```bash
-uv run python -m sim.sitl.websocket_bridge
+uv run python -m sim.sitl.udp_bridge
 ```
 
-Optional explicit telemetry file:
+Optional explicit telemetry file and JSON debug output:
 
 ```bash
-uv run python -m sim.sitl.websocket_bridge --telemetry logs/virtual_sensors_full_rate_260313_190556.csv
+uv run python -m sim.sitl.udp_bridge \
+	--telemetry logs/virtual_sensors_full_rate_260313_190556.csv \
+	--target-host 127.0.0.1 \
+	--mavlink-target-port 14550 \
+	--json-target-port 14610
 ```
 
-WebSocket endpoints:
-- `ws://127.0.0.1:8765/clock`
-- `ws://127.0.0.1:8765/sensors`
-
-`/clock` command messages (JSON):
+UDP control commands go to `udp://0.0.0.0:14600` by default as JSON datagrams:
 - `{"op": "status"}`
 - `{"op": "sync", "time_s": 2.54}`
 - `{"op": "step", "count": 1}`
@@ -93,7 +102,12 @@ WebSocket endpoints:
 - `{"op": "reset"}`
 - `{"op": "seek_index", "index": 150}`
 
-`/clock` emits clock state updates and `/sensors` emits the replayed CSV row for the current replay time. `NaN` values in CSV rows are normalized to `null` for robust JSON decoding in firmware SITL clients.
+The MAVLink adapter emits standard `common.xml` messages over UDP:
+- `SYSTEM_TIME` for replay clock sync
+- `HIL_SENSOR` for IMU and barometer values
+- `HIL_GPS` for GNSS fixes derived from the CSV
+
+CSV `NaN` values are normalized to `null` in the JSON adapter. MAVLink packets omit GNSS output when a row does not contain a valid fix.
 
 
 ## If you're going to work on the Itzamna notebook

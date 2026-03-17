@@ -50,9 +50,6 @@ def main() -> int:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "notebooks", "Itzamna"))
 
     from rocket_config import (
-        LAUNCH_LATITUDE,
-        LAUNCH_LONGITUDE,
-        create_environment,
         create_rocket,
     )
     from sim import launch_gui
@@ -81,22 +78,14 @@ def main() -> int:
     print(f"  - Surfaces: {len(rocket.aerodynamic_surfaces)}")
     print()
 
-    # ==================== CREATE ENVIRONMENT FOR SIMULATION ====================
-    print("Creating environment for flight simulation...")
-    print("Using GFS forecast data for realistic wind conditions...")
-    environment = create_environment(use_forecast=True)
-    print(f"✓ Environment configured for {LAUNCH_LATITUDE:.6f}°N, {LAUNCH_LONGITUDE:.6f}°W")
-    print("  (includes wind from weather forecast)")
-    print()
-
     print("Launching Rocket 3D Viewer...")
     print("  - Static Mode: View rocket geometry")
-    print("  - 3D Simulation Mode: Compute and visualize flight")
+    print("  - 3D Simulation Mode: Replay and visualize flight kinematics")
     print()
 
     # ==================== LAUNCH GUI ====================
-    # Launch the viewer with the rocket and environment
-    return launch_gui(rocket, environment)
+    # Launch the viewer with rocket geometry; simulation mode consumes replay kinematics.
+    return launch_gui(rocket)
 
 
 if __name__ == "__main__":

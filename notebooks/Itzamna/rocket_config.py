@@ -40,6 +40,14 @@ LAUNCH_LONGITUDE = ROCKET_RANCH_LONGITUDE
 LAUNCH_ELEVATION = ROCKET_RANCH_ELEVATION
 
 
+# ==================== STATIC ATMOSPHERE (VIEWER/LOCAL REPLAY) ====================
+# Deterministic weather profile used when forecast fetch is unavailable.
+STATIC_PRESSURE_PA = 96453.7  # Pa, close to measured pad pressure in recent logs
+STATIC_TEMPERATURE_K = 293.15  # K (20 C)
+STATIC_WIND_U_MPS = 2.0  # +East m/s
+STATIC_WIND_V_MPS = -1.0  # +North m/s
+
+
 # ==================== MOTOR PARAMETERS ====================
 MOTOR_DRY_MASS = 3.353  # kg
 MOTOR_GRAIN_DENSITY = 1137.5  # kg/m³
@@ -211,12 +219,13 @@ def load_drag_coefficients(base_path='../../data'):
 
     return cd_power_off, cd_power_on
 
-def create_environment(use_forecast=True):
+def create_environment(use_forecast=False):
     """
     Create and configure the Environment object.
     
     Args:
-        use_forecast: Whether to use GFS forecast data (default: True)
+        use_forecast: Whether to try online GFS forecast data. If forecast
+            retrieval fails (or False), a deterministic static atmosphere is used.
         
     Returns:
         Environment: Configured environment object
@@ -224,11 +233,26 @@ def create_environment(use_forecast=True):
     env = Environment()
     env.set_location(latitude=LAUNCH_LATITUDE, longitude=LAUNCH_LONGITUDE)
     env.set_elevation(LAUNCH_ELEVATION)
-    
+
+    # Always set a reliable local baseline first.
+    env.set_atmospheric_model(
+        type='custom_atmosphere',
+        pressure=STATIC_PRESSURE_PA,
+        temperature=STATIC_TEMPERATURE_K,
+        wind_u=STATIC_WIND_U_MPS,
+        wind_v=STATIC_WIND_V_MPS,
+    )
+
     if use_forecast:
-        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
-        env.set_date((tomorrow.year, tomorrow.month, tomorrow.day, 12))
-        env.set_atmospheric_model(type='Forecast', file='GFS')
+        try:
+            tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+            env.set_date((tomorrow.year, tomorrow.month, tomorrow.day, 12))
+            env.set_atmospheric_model(type='Forecast', file='GFS')
+        except Exception as exc:
+            print(
+                'Warning: Forecast atmosphere unavailable; using static atmosphere. '
+                f'Reason: {exc}'
+            )
     
     return env
 
