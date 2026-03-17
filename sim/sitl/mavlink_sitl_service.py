@@ -1,29 +1,31 @@
 """Rate-aware MAVLink SITL service for GUI step-through integration.
 
-Emits MAVLink HIL_SENSOR / HIL_GPS packets over UDP, gated by per-sensor
-freshness flags so each sensor only fires at its own data rate — mirroring
-real hardware behaviour (IMU at ~800 Hz, baro at ~50 Hz, GPS at ~5 Hz).
+Emits MAVLink HIL_SENSOR / HIL_GPS packets over either UDP or USB serial,
+gated by per-sensor freshness flags so each sensor only fires at its own data
+rate. This mirrors real hardware behaviour more closely for both SITL and HIL.
 
 Usage::
 
     service = SitlMavlinkService(sensors_df)
-    service.start()            # defaults to 127.0.0.1:14560
+    service.start()  # defaults to udp://127.0.0.1:14560
     # ... per GUI step:
-    service.emit_state(state)  # state dict from CsvReplayController
+    service.emit_state(state)
     service.stop()
 """
 
 from __future__ import annotations
 
 import io
-import socket
 import logging
 import math
+import socket
+import threading
+import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-import numpy as np
 import pandas as pd
 from pymavlink.dialects.v20 import common as mavlink2
 
@@ -32,7 +34,16 @@ from sim.estimation.adapters.rocketpy_replay import (
     pressure_to_altitude_m,
 )
 
+try:
+    import serial as _pyserial
+    from serial.tools import list_ports as _serial_list_ports
+except ImportError:  # pragma: no cover - exercised through explicit fallback tests
+    _pyserial = None
+    _serial_list_ports = None
+
 log = logging.getLogger(__name__)
+
+TransportMode = Literal["udp", "serial"]
 
 # ---------------------------------------------------------------------------
 # MAVLink HIL_SENSOR fields_updated bitmask constants
@@ -41,41 +52,155 @@ log = logging.getLogger(__name__)
 _IMU_FIELDS = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5)
 _BARO_FIELDS = (1 << 9) | (1 << 11)  # abs_pressure + pressure_alt
 _EARTH_RADIUS_M = 6_378_137.0
+_SERIAL_READ_IDLE_SLEEP_S = 0.01
+_SERIAL_RX_PREVIEW_BYTES = 24
+
+
+@dataclass(frozen=True, slots=True)
+class SerialPortInfo:
+    """Small, GUI-friendly serial port descriptor."""
+
+    device: str
+    description: str = ""
+
+
+def serial_support_available() -> bool:
+    """Return whether pyserial is importable in the current environment."""
+    return _pyserial is not None
+
+
+def list_serial_ports() -> list[SerialPortInfo]:
+    """Enumerate available serial ports for the GUI port picker."""
+    if _serial_list_ports is None:
+        return []
+
+    ports: list[SerialPortInfo] = []
+    for port in _serial_list_ports.comports():
+        device = str(getattr(port, "device", "") or "").strip()
+        if not device:
+            continue
+        description = str(getattr(port, "description", "") or "").strip()
+        ports.append(SerialPortInfo(device=device, description=description))
+    return sorted(ports, key=lambda item: item.device)
+
+
+class _UdpTransport:
+    def __init__(self, host: str, port: int) -> None:
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._target = (host, port)
+
+    def send(self, payload: bytes) -> None:
+        self._socket.sendto(payload, self._target)
+
+    def close(self) -> None:
+        self._socket.close()
+
+
+class _SerialTransport:
+    def __init__(
+        self,
+        *,
+        port: str,
+        baudrate: int,
+        bytesize: int,
+        parity: str,
+        stopbits: float,
+        timeout_s: float,
+        log_line: Callable[[str], None] | None,
+    ) -> None:
+        if _pyserial is None:
+            raise RuntimeError(
+                "USB serial MAVLink requires pyserial. Add the dependency and sync the environment."
+            )
+
+        device = port.strip()
+        if not device:
+            raise ValueError("Select a USB serial port before enabling MAVLink.")
+
+        self._timeout_s = max(0.0, float(timeout_s))
+        self._log_line = log_line
+        self._stop_event = threading.Event()
+        self._serial = _pyserial.Serial(
+            port=device,
+            baudrate=int(baudrate),
+            bytesize=int(bytesize),
+            parity=str(parity).upper(),
+            stopbits=float(stopbits),
+            timeout=self._timeout_s,
+            write_timeout=max(self._timeout_s, 0.1),
+        )
+        self._reader_thread = threading.Thread(
+            target=self._read_loop,
+            name="SitlMavlinkSerialReader",
+            daemon=True,
+        )
+        self._reader_thread.start()
+
+    def send(self, payload: bytes) -> None:
+        self._serial.write(payload)
+        flush = getattr(self._serial, "flush", None)
+        if callable(flush):
+            flush()
+
+    def close(self) -> None:
+        self._stop_event.set()
+        close = getattr(self._serial, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # pragma: no cover - defensive close path
+                log.debug("Ignoring serial close failure", exc_info=True)
+        if self._reader_thread.is_alive():
+            self._reader_thread.join(timeout=max(0.2, (2.0 * self._timeout_s) + 0.1))
+
+    def _read_loop(self) -> None:
+        serial_exception = _get_serial_exception_type()
+        while not self._stop_event.is_set():
+            try:
+                waiting = int(getattr(self._serial, "in_waiting", 0) or 0)
+                chunk = self._serial.read(waiting or 1)
+            except serial_exception as exc:
+                if not self._stop_event.is_set() and self._log_line is not None:
+                    self._log_line(f"SERIAL RX ERROR {exc}")
+                return
+            except Exception as exc:  # pragma: no cover - defensive path
+                if not self._stop_event.is_set() and self._log_line is not None:
+                    self._log_line(f"SERIAL RX ERROR {exc}")
+                return
+
+            if chunk:
+                if self._log_line is not None:
+                    self._log_line(_format_serial_rx_line(bytes(chunk)))
+            elif waiting == 0 and self._timeout_s <= 0.0:
+                time.sleep(_SERIAL_READ_IDLE_SLEEP_S)
 
 
 @dataclass
 class SitlMavlinkService:
-    """Rate-aware MAVLink SITL emitter for GUI step-through replay.
-
-    Parameters
-    ----------
-    sensors_df:
-        The loaded sensor DataFrame (same one passed to CsvReplayController).
-        Used only to derive reference altitude and sea-level pressure.
-    host:
-        UDP destination host (default: loopback, for local PX4 / ArduPilot SITL).
-    port:
-        UDP destination port (PX4 HIL default: 14560).
-    system_id / component_id:
-        MAVLink source IDs embedded into every packet.
-    unix_epoch_base_usec:
-        Offset added to flight time_s to form the SYSTEM_TIME timestamp.
-        Leave at 0 to emit simulation-relative times.
-    """
+    """Rate-aware MAVLink SITL emitter for GUI step-through replay."""
 
     sensors_df: pd.DataFrame
+    transport: TransportMode = "udp"
     host: str = "127.0.0.1"
     port: int = 14560
+    serial_port: str = ""
+    serial_baudrate: int = 115200
+    serial_bytesize: int = 8
+    serial_parity: str = "N"
+    serial_stopbits: float = 1.0
+    serial_timeout_s: float = 0.02
     system_id: int = 1
     component_id: int = 1
     unix_epoch_base_usec: int = 0
     # Optional callback invoked after each emit_state() call with a human-readable
-    # summary string. Set by the GUI to feed the MAVLink output window.
+    # summary string. The GUI uses this for the existing green terminal output.
     on_emit: Callable[[str], None] | None = field(default=None, repr=False)
 
     # private state — not part of the public API
     _active: bool = field(default=False, init=False, repr=False)
-    _socket: socket.socket | None = field(default=None, init=False, repr=False)
+    _transport_handle: _UdpTransport | _SerialTransport | None = field(
+        default=None, init=False, repr=False
+    )
     _mav: Any = field(default=None, init=False, repr=False)
     _buf: io.BytesIO = field(default_factory=io.BytesIO, init=False, repr=False)
     _reference_altitude_m: float = field(default=0.0, init=False, repr=False)
@@ -83,6 +208,8 @@ class SitlMavlinkService:
     _previous_gnss: tuple[float, float, float, float] | None = field(
         default=None, init=False, repr=False
     )
+    _pending_log_lines: deque[str] = field(default_factory=deque, init=False, repr=False)
+    _log_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._reference_altitude_m = _resolve_reference_altitude(self.sensors_df)
@@ -90,41 +217,126 @@ class SitlMavlinkService:
             self.sensors_df, self._reference_altitude_m
         )
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    @property
+    def active(self) -> bool:
+        return self._active
 
-    def start(self, host: str | None = None, port: int | None = None) -> None:
-        """Open the UDP socket and begin accepting emit_state() calls."""
+    @property
+    def endpoint_description(self) -> str:
+        if self.transport == "serial":
+            return _format_serial_endpoint(
+                port=self.serial_port,
+                baudrate=self.serial_baudrate,
+                bytesize=self.serial_bytesize,
+                parity=self.serial_parity,
+                stopbits=self.serial_stopbits,
+            )
+        return f"udp://{self.host}:{int(self.port)}"
+
+    def configure_udp(self, *, host: str, port: int) -> None:
+        self.transport = "udp"
+        self.host = host.strip() or "127.0.0.1"
+        self.port = int(port)
+
+    def configure_serial(
+        self,
+        *,
+        port: str,
+        baudrate: int,
+        bytesize: int = 8,
+        parity: str = "N",
+        stopbits: float = 1.0,
+        timeout_s: float = 0.02,
+    ) -> None:
+        self.transport = "serial"
+        self.serial_port = port.strip()
+        self.serial_baudrate = int(baudrate)
+        self.serial_bytesize = int(bytesize)
+        self.serial_parity = str(parity).upper()
+        self.serial_stopbits = float(stopbits)
+        self.serial_timeout_s = float(timeout_s)
+
+    def start(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        *,
+        transport: TransportMode | None = None,
+        serial_port: str | None = None,
+        serial_baudrate: int | None = None,
+        serial_bytesize: int | None = None,
+        serial_parity: str | None = None,
+        serial_stopbits: float | None = None,
+        serial_timeout_s: float | None = None,
+    ) -> None:
+        """Open the selected transport and begin accepting emit_state() calls."""
+        if self._active:
+            self.stop()
+
+        if transport is not None:
+            self.transport = transport
         if host is not None:
             self.host = host
         if port is not None:
-            self.port = port
+            self.port = int(port)
+        if serial_port is not None:
+            self.serial_port = serial_port
+        if serial_baudrate is not None:
+            self.serial_baudrate = int(serial_baudrate)
+        if serial_bytesize is not None:
+            self.serial_bytesize = int(serial_bytesize)
+        if serial_parity is not None:
+            self.serial_parity = str(serial_parity).upper()
+        if serial_stopbits is not None:
+            self.serial_stopbits = float(serial_stopbits)
+        if serial_timeout_s is not None:
+            self.serial_timeout_s = float(serial_timeout_s)
 
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._buf = io.BytesIO()
         self._mav = mavlink2.MAVLink(self._buf)
         self._mav.srcSystem = int(self.system_id)
         self._mav.srcComponent = int(self.component_id)
         self._previous_gnss = None
+
+        if self.transport == "udp":
+            self._transport_handle = _UdpTransport(self.host, int(self.port))
+        elif self.transport == "serial":
+            self._transport_handle = _SerialTransport(
+                port=self.serial_port,
+                baudrate=self.serial_baudrate,
+                bytesize=self.serial_bytesize,
+                parity=self.serial_parity,
+                stopbits=self.serial_stopbits,
+                timeout_s=self.serial_timeout_s,
+                log_line=self._queue_log_line,
+            )
+        else:  # pragma: no cover - guarded by GUI controls and type hints
+            raise ValueError(f"Unsupported MAVLink transport: {self.transport!r}")
+
         self._active = True
-        log.info("SitlMavlinkService started → udp://%s:%d", self.host, self.port)
+        self._queue_log_line(f"OPEN {self.endpoint_description}")
+        log.info("SitlMavlinkService started → %s", self.endpoint_description)
 
     def stop(self) -> None:
-        """Disable emission and close the socket."""
+        """Disable emission and close the active transport."""
+        if not self._active and self._transport_handle is None:
+            return
+
+        description = self.endpoint_description
         self._active = False
-        if self._socket is not None:
-            self._socket.close()
-            self._socket = None
+        transport = self._transport_handle
+        self._transport_handle = None
+        if transport is not None:
+            transport.close()
+        self._queue_log_line(f"CLOSE {description}")
         log.info("SitlMavlinkService stopped")
 
-    @property
-    def active(self) -> bool:
-        return self._active
-
-    # ------------------------------------------------------------------
-    # Per-step emission
-    # ------------------------------------------------------------------
+    def drain_pending_log_lines(self) -> list[str]:
+        """Return queued transport/system log lines generated off the GUI thread."""
+        with self._log_lock:
+            lines = list(self._pending_log_lines)
+            self._pending_log_lines.clear()
+        return lines
 
     def emit_state(self, state: dict[str, Any]) -> None:
         """Emit MAVLink packets for the given simulation state.
@@ -133,7 +345,7 @@ class SitlMavlinkService:
         with new data at this step generate packets — matching real hardware
         sample rates naturally.
         """
-        if not self._active or self._socket is None:
+        if not self._active or self._transport_handle is None:
             return
 
         sensors: dict[str, float | None] = state.get("sensors", {})
@@ -143,7 +355,6 @@ class SitlMavlinkService:
         # Always emit SYSTEM_TIME so the FC tracks sim wall-clock
         self._send(self._pack(self._system_time_msg(time_s)))
 
-        # Determine which sensor groups have fresh data this step
         imu_fresh = bool(freshness.get("accelerometer_x", False))
         baro_fresh = bool(freshness.get("barometer_v1", False))
         fields_updated = (
@@ -165,24 +376,29 @@ class SitlMavlinkService:
                 emitted_gps = True
 
         if self.on_emit is not None:
-            self.on_emit(self._format_emit_line(
-                time_s, sensors, freshness,
-                imu_fresh, baro_fresh, emitted_sensor, fields_updated,
-                emitted_gps,
-            ))
+            self.on_emit(
+                self._format_emit_line(
+                    time_s,
+                    sensors,
+                    imu_fresh,
+                    baro_fresh,
+                    emitted_sensor,
+                    fields_updated,
+                    emitted_gps,
+                )
+            )
 
     def _format_emit_line(
         self,
         time_s: float,
         sensors: dict[str, float | None],
-        freshness: dict[str, bool],
         imu_fresh: bool,
         baro_fresh: bool,
         emitted_sensor: bool,
         fields_updated: int,
         emitted_gps: bool,
     ) -> str:
-        parts = [f"t={time_s:.4f}s  SYSTEM_TIME"]
+        parts = [f"t={time_s:.4f}s  {self.endpoint_description}  SYSTEM_TIME"]
 
         if emitted_sensor:
             flags = []
@@ -195,24 +411,27 @@ class SitlMavlinkService:
                 gz = _safe_float(sensors.get("gyroscope_z"))
                 flags.append(
                     f"IMU acc=({ax:.3f},{ay:.3f},{az:.3f}) "
-                    f"gyro=({gx:.3f},{gy:.3f},{gz:.3f}) m/s²,rad/s"
+                    f"gyro=({gx:.3f},{gy:.3f},{gz:.3f}) m/s^2,rad/s"
                 )
             if baro_fresh:
-                pressure_pa = _safe_float(sensors.get("barometer_v1"), self._sea_level_pressure_pa)
+                pressure_pa = _safe_float(
+                    sensors.get("barometer_v1"),
+                    self._sea_level_pressure_pa,
+                )
                 flags.append(f"BARO {pressure_pa:.1f} Pa")
-            parts.append("HIL_SENSOR [" + "  ".join(flags) + f"]  fields=0x{fields_updated:04x}")
+            parts.append(
+                "HIL_SENSOR ["
+                + "  ".join(flags)
+                + f"]  fields=0x{fields_updated:04x}"
+            )
 
         if emitted_gps:
             lat = _safe_float(sensors.get("gnss_x"))
             lon = _safe_float(sensors.get("gnss_y"))
             alt = _safe_float(sensors.get("gnss_z"))
-            parts.append(f"HIL_GPS lat={lat:.6f}° lon={lon:.6f}° alt={alt:.1f}m")
+            parts.append(f"HIL_GPS lat={lat:.6f} deg lon={lon:.6f} deg alt={alt:.1f}m")
 
         return "  |  ".join(parts)
-
-    # ------------------------------------------------------------------
-    # MAVLink message builders
-    # ------------------------------------------------------------------
 
     def _system_time_msg(self, time_s: float) -> Any:
         time_usec = self.unix_epoch_base_usec + int(round(time_s * 1_000_000.0))
@@ -222,7 +441,10 @@ class SitlMavlinkService:
         )
 
     def _hil_sensor_msg(
-        self, time_s: float, sensors: dict[str, float | None], fields_updated: int
+        self,
+        time_s: float,
+        sensors: dict[str, float | None],
+        fields_updated: int,
     ) -> Any:
         pressure_pa = _safe_float(sensors.get("barometer_v1"), self._sea_level_pressure_pa)
         pressure_alt_m = pressure_to_altitude_m(pressure_pa, self._sea_level_pressure_pa)
@@ -239,7 +461,7 @@ class SitlMavlinkService:
             xmag=0.0,
             ymag=0.0,
             zmag=0.0,
-            abs_pressure=float(pressure_pa / 100.0),  # Pa → hPa (mbar)
+            abs_pressure=float(pressure_pa / 100.0),  # Pa -> hPa (mbar)
             diff_pressure=0.0,
             pressure_alt=float(pressure_alt_m),
             temperature=0.0,
@@ -275,7 +497,11 @@ class SitlMavlinkService:
         )
 
     def _derive_gps_velocity(
-        self, lat: float, lon: float, alt: float, time_s: float
+        self,
+        lat: float,
+        lon: float,
+        alt: float,
+        time_s: float,
     ) -> tuple[float, float, float, float, float]:
         if self._previous_gnss is None:
             return 0.0, 0.0, 0.0, 0.0, 0.0
@@ -303,10 +529,6 @@ class SitlMavlinkService:
         # Return in cm/s and centidegrees
         return vn * 100.0, ve * 100.0, vd * 100.0, speed * 100.0, cog * 100.0
 
-    # ------------------------------------------------------------------
-    # Transport helpers
-    # ------------------------------------------------------------------
-
     def _pack(self, message: Any) -> bytes:
         self._buf.seek(0)
         self._buf.truncate(0)
@@ -318,15 +540,16 @@ class SitlMavlinkService:
 
     def _send(self, payload: bytes) -> None:
         try:
-            assert self._socket is not None
-            self._socket.sendto(payload, (self.host, self.port))
-        except OSError as exc:
-            log.warning("SitlMavlinkService UDP send failed: %s", exc)
+            assert self._transport_handle is not None
+            self._transport_handle.send(payload)
+        except Exception as exc:
+            log.warning("SitlMavlinkService send failed (%s): %s", self.endpoint_description, exc)
+            self._queue_log_line(f"TX ERROR {self.endpoint_description}: {exc}")
 
+    def _queue_log_line(self, line: str) -> None:
+        with self._log_lock:
+            self._pending_log_lines.append(line)
 
-# ---------------------------------------------------------------------------
-# Helpers (same logic as MavlinkCommonAdapter)
-# ---------------------------------------------------------------------------
 
 def _resolve_reference_altitude(sensors_df: pd.DataFrame) -> float:
     if "gnss_z" not in sensors_df.columns:
@@ -345,6 +568,42 @@ def _resolve_sea_level_pressure(sensors_df: pd.DataFrame, ref_alt_m: float) -> f
         reference_pressure_pa=float(valid.iloc[0]),
         reference_altitude_m=ref_alt_m,
     )
+
+
+def _format_serial_endpoint(
+    *,
+    port: str,
+    baudrate: int,
+    bytesize: int,
+    parity: str,
+    stopbits: float,
+) -> str:
+    port_label = port.strip() or "<select-port>"
+    stopbits_label = _format_stopbits(stopbits)
+    return (
+        f"serial://{port_label} @ {int(baudrate)} "
+        f"{int(bytesize)}{str(parity).upper()}{stopbits_label}"
+    )
+
+
+def _format_stopbits(stopbits: float) -> str:
+    rounded = float(stopbits)
+    if math.isclose(rounded, round(rounded)):
+        return str(int(round(rounded)))
+    return f"{rounded:g}"
+
+
+def _format_serial_rx_line(data: bytes) -> str:
+    preview = " ".join(f"{byte:02x}" for byte in data[:_SERIAL_RX_PREVIEW_BYTES])
+    if len(data) > _SERIAL_RX_PREVIEW_BYTES:
+        preview += " ..."
+    return f"RX {len(data)}B {preview}"
+
+
+def _get_serial_exception_type() -> type[Exception]:
+    if _pyserial is None:
+        return OSError
+    return getattr(_pyserial, "SerialException", OSError)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

@@ -28,9 +28,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGroupBox, QCheckBox, QTextEdit, QSplitter,
     QFileDialog, QMessageBox, QFrame, QRadioButton, QSlider,
-    QScrollArea, QDockWidget, QPlainTextEdit
+    QScrollArea, QDockWidget, QPlainTextEdit, QComboBox, QLineEdit,
+    QGridLayout, QSpinBox, QSizePolicy
 )
-from PySide6.QtCore import Qt, Slot, QEvent
+from PySide6.QtCore import Qt, Slot, QEvent, QTimer
 from PySide6.QtGui import QFont
 from pyvistaqt import QtInteractor
 import pyvista as pv
@@ -40,7 +41,11 @@ _MAX_MAVLINK_LOG_LINES = 500  # keep last N lines in the output window
 from ..rendering.renderer import RocketRenderer
 from ..simulation import CsvReplayController, load_replay_pair, quaternion_to_matrix
 from ..simulation.quaternion_utils import interpolate_quaternion
-from ..sitl.mavlink_sitl_service import SitlMavlinkService
+from ..sitl.mavlink_sitl_service import (
+    SitlMavlinkService,
+    list_serial_ports,
+    serial_support_available,
+)
 from .telemetry_display import TelemetryDisplay
 
 # Suppress VTK warnings that appear during PyVista shutdown
@@ -129,6 +134,7 @@ class RocketViewerApp(QMainWindow):
         
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
         main_layout.addWidget(splitter)
         
         # Left panel: Controls
@@ -138,6 +144,9 @@ class RocketViewerApp(QMainWindow):
         # Right panel: 3D Viewer
         right_panel = self.create_viewer_panel()
         splitter.addWidget(right_panel)
+
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         
         # Set initial splitter sizes (30% controls, 70% viewer)
         splitter.setSizes([420, 980])
@@ -147,6 +156,10 @@ class RocketViewerApp(QMainWindow):
 
         # MAVLink output dock
         self._create_mavlink_log_dock()
+        self._mavlink_log_poll_timer = QTimer(self)
+        self._mavlink_log_poll_timer.setInterval(75)
+        self._mavlink_log_poll_timer.timeout.connect(self._flush_mavlink_service_log_queue)
+        self._mavlink_log_poll_timer.start()
 
     def _create_mavlink_log_dock(self) -> None:
         """Create a bottom dockable panel that shows live MAVLink emit output."""
@@ -202,7 +215,8 @@ class RocketViewerApp(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMaximumWidth(500)
+        scroll.setMinimumWidth(360)
+        scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         
         panel = QWidget()
         layout = QVBoxLayout(panel)
@@ -220,6 +234,10 @@ class RocketViewerApp(QMainWindow):
         self.sim_controls_group = self.create_simulation_controls()
         layout.addWidget(self.sim_controls_group)
         self.sim_controls_group.setVisible(False)
+
+        self.mavlink_controls_group = self.create_mavlink_controls_group()
+        layout.addWidget(self.mavlink_controls_group)
+        self.mavlink_controls_group.setVisible(False)
         
         # Object info section
         info_group = QGroupBox('Rocket Information')
@@ -348,6 +366,23 @@ class RocketViewerApp(QMainWindow):
         self.overlay_toggle_btn.clicked.connect(self.on_overlay_toggle_clicked)
         layout.addWidget(self.overlay_toggle_btn)
         
+        group.setLayout(layout)
+        return group
+
+    def create_mavlink_controls_group(self) -> QGroupBox:
+        """Create the left-side MAVLink transport configuration panel."""
+        group = QGroupBox('MAVLink Output')
+        layout = QVBoxLayout()
+
+        description = QLabel(
+            'Select the MAVLink transport here. Use UDP for the current SITL flow '
+            'or USB serial for direct HIL on hardware.'
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        self._create_mavlink_transport_controls(layout)
+
         group.setLayout(layout)
         return group
     
@@ -510,15 +545,17 @@ class RocketViewerApp(QMainWindow):
         self.mavlink_toggle_btn.setChecked(False)
         self.mavlink_toggle_btn.clicked.connect(self.on_mavlink_toggle_clicked)
         self.mavlink_toggle_btn.setToolTip(
-            'Emit MAVLink HIL sensor packets over UDP for SITL.\n'
+            'Emit MAVLink HIL sensor packets over UDP or USB serial.\n'
             'Respects per-sensor sample rates via freshness flags.'
         )
         mavlink_layout.addWidget(self.mavlink_toggle_btn)
-        self.mavlink_status_label = QLabel('udp://127.0.0.1:14560')
+        self.mavlink_status_label = QLabel('')
         self.mavlink_status_label.setStyleSheet('color: #888888; font-size: 11px;')
         mavlink_layout.addWidget(self.mavlink_status_label)
         mavlink_layout.addStretch()
         overlay_layout.addLayout(mavlink_layout)
+        self._refresh_serial_ports()
+        self._on_mavlink_transport_changed()
 
         self.show_overlay_btn = QPushButton('Show Replay Overlay', parent)
         self.show_overlay_btn.clicked.connect(lambda: self.set_replay_overlay_visibility(True))
@@ -559,6 +596,247 @@ class RocketViewerApp(QMainWindow):
     def on_overlay_toggle_clicked(self) -> None:
         """Toggle replay overlay visibility from the left-side controls panel."""
         self.set_replay_overlay_visibility(not self.replay_overlay_visible)
+
+    def _create_mavlink_transport_controls(self, overlay_layout: QVBoxLayout) -> None:
+        """Create the transport picker and config editors for MAVLink output."""
+        frame = QFrame()
+        frame.setStyleSheet('QFrame { border: 1px solid #3a3a3a; border-radius: 4px; }')
+
+        layout = QGridLayout(frame)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
+
+        layout.addWidget(QLabel('Transport'), 0, 0)
+        self.mavlink_transport_combo = QComboBox()
+        self.mavlink_transport_combo.addItem('UDP', 'udp')
+        self.mavlink_transport_combo.addItem('USB Serial', 'serial')
+        self.mavlink_transport_combo.currentIndexChanged.connect(self._on_mavlink_transport_changed)
+        layout.addWidget(self.mavlink_transport_combo, 0, 1, 1, 3)
+
+        self.mavlink_udp_config_widget = QWidget()
+        udp_layout = QGridLayout(self.mavlink_udp_config_widget)
+        udp_layout.setContentsMargins(0, 0, 0, 0)
+        udp_layout.setHorizontalSpacing(8)
+        udp_layout.setVerticalSpacing(4)
+        udp_layout.addWidget(QLabel('Host'), 0, 0)
+        self.mavlink_udp_host_edit = QLineEdit('127.0.0.1')
+        self.mavlink_udp_host_edit.textChanged.connect(self._on_mavlink_settings_changed)
+        udp_layout.addWidget(self.mavlink_udp_host_edit, 0, 1)
+        udp_layout.addWidget(QLabel('Port'), 0, 2)
+        self.mavlink_udp_port_spin = QSpinBox()
+        self.mavlink_udp_port_spin.setRange(1, 65535)
+        self.mavlink_udp_port_spin.setValue(14560)
+        self.mavlink_udp_port_spin.valueChanged.connect(self._on_mavlink_settings_changed)
+        udp_layout.addWidget(self.mavlink_udp_port_spin, 0, 3)
+        layout.addWidget(self.mavlink_udp_config_widget, 1, 0, 1, 4)
+
+        self.mavlink_serial_config_widget = QWidget()
+        serial_layout = QGridLayout(self.mavlink_serial_config_widget)
+        serial_layout.setContentsMargins(0, 0, 0, 0)
+        serial_layout.setHorizontalSpacing(8)
+        serial_layout.setVerticalSpacing(4)
+        serial_layout.addWidget(QLabel('Port'), 0, 0)
+        self.mavlink_serial_port_combo = QComboBox()
+        self.mavlink_serial_port_combo.setEditable(True)
+        self.mavlink_serial_port_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.mavlink_serial_port_combo.currentTextChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_port_combo, 0, 1, 1, 2)
+        self.mavlink_serial_refresh_btn = QPushButton('Refresh')
+        self.mavlink_serial_refresh_btn.clicked.connect(self._refresh_serial_ports)
+        serial_layout.addWidget(self.mavlink_serial_refresh_btn, 0, 3)
+
+        serial_layout.addWidget(QLabel('Baud'), 1, 0)
+        self.mavlink_serial_baud_spin = QSpinBox()
+        self.mavlink_serial_baud_spin.setRange(1, 3_000_000)
+        self.mavlink_serial_baud_spin.setSingleStep(115200)
+        self.mavlink_serial_baud_spin.setValue(115200)
+        self.mavlink_serial_baud_spin.valueChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_baud_spin, 1, 1)
+
+        serial_layout.addWidget(QLabel('Data bits'), 1, 2)
+        self.mavlink_serial_bytesize_combo = QComboBox()
+        for value in (8, 7, 6, 5):
+            self.mavlink_serial_bytesize_combo.addItem(str(value), value)
+        self.mavlink_serial_bytesize_combo.currentIndexChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_bytesize_combo, 1, 3)
+
+        serial_layout.addWidget(QLabel('Parity'), 2, 0)
+        self.mavlink_serial_parity_combo = QComboBox()
+        self.mavlink_serial_parity_combo.addItem('None', 'N')
+        self.mavlink_serial_parity_combo.addItem('Even', 'E')
+        self.mavlink_serial_parity_combo.addItem('Odd', 'O')
+        self.mavlink_serial_parity_combo.currentIndexChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_parity_combo, 2, 1)
+
+        serial_layout.addWidget(QLabel('Stop bits'), 2, 2)
+        self.mavlink_serial_stopbits_combo = QComboBox()
+        self.mavlink_serial_stopbits_combo.addItem('1', 1.0)
+        self.mavlink_serial_stopbits_combo.addItem('1.5', 1.5)
+        self.mavlink_serial_stopbits_combo.addItem('2', 2.0)
+        self.mavlink_serial_stopbits_combo.currentIndexChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_stopbits_combo, 2, 3)
+
+        serial_layout.addWidget(QLabel('Read timeout'), 3, 0)
+        self.mavlink_serial_timeout_spin = QSpinBox()
+        self.mavlink_serial_timeout_spin.setRange(0, 5000)
+        self.mavlink_serial_timeout_spin.setSingleStep(10)
+        self.mavlink_serial_timeout_spin.setSuffix(' ms')
+        self.mavlink_serial_timeout_spin.setValue(20)
+        self.mavlink_serial_timeout_spin.valueChanged.connect(self._on_mavlink_settings_changed)
+        serial_layout.addWidget(self.mavlink_serial_timeout_spin, 3, 1)
+        layout.addWidget(self.mavlink_serial_config_widget, 2, 0, 1, 4)
+
+        overlay_layout.addWidget(frame)
+
+    def _on_mavlink_transport_changed(self) -> None:
+        """Show the config section for the currently selected transport."""
+        transport = self._current_mavlink_transport()
+        self.mavlink_udp_config_widget.setVisible(transport == 'udp')
+        self.mavlink_serial_config_widget.setVisible(transport == 'serial')
+        if transport == 'serial':
+            self._refresh_serial_ports()
+        self._on_mavlink_settings_changed()
+        self._apply_mavlink_transport_controls_state()
+
+    def _on_mavlink_settings_changed(self) -> None:
+        """Push the current transport settings into the service and status preview."""
+        if self._sitl_service is not None and not self._sitl_service.active:
+            self._apply_mavlink_settings_to_service()
+        if self._sitl_service is None or not self._sitl_service.active:
+            self._update_mavlink_status_preview()
+
+    def _apply_mavlink_settings_to_service(self) -> None:
+        """Mirror the transport widgets into the current MAVLink service config."""
+        if self._sitl_service is None:
+            return
+
+        if self._current_mavlink_transport() == 'serial':
+            self._sitl_service.configure_serial(
+                port=self._selected_serial_port_path(),
+                baudrate=self.mavlink_serial_baud_spin.value(),
+                bytesize=int(self.mavlink_serial_bytesize_combo.currentData() or 8),
+                parity=str(self.mavlink_serial_parity_combo.currentData() or 'N'),
+                stopbits=float(self.mavlink_serial_stopbits_combo.currentData() or 1.0),
+                timeout_s=self.mavlink_serial_timeout_spin.value() / 1000.0,
+            )
+        else:
+            self._sitl_service.configure_udp(
+                host=self.mavlink_udp_host_edit.text().strip() or '127.0.0.1',
+                port=self.mavlink_udp_port_spin.value(),
+            )
+
+    def _refresh_serial_ports(self) -> None:
+        """Refresh the USB serial port picker from the local machine."""
+        current_port = self._selected_serial_port_path()
+        ports = list_serial_ports()
+
+        self.mavlink_serial_port_combo.blockSignals(True)
+        self.mavlink_serial_port_combo.clear()
+        for port_info in ports:
+            label = (
+                f'{port_info.device} ({port_info.description})'
+                if port_info.description
+                else port_info.device
+            )
+            self.mavlink_serial_port_combo.addItem(label, port_info.device)
+
+        if current_port:
+            index = self.mavlink_serial_port_combo.findData(current_port)
+            if index >= 0:
+                self.mavlink_serial_port_combo.setCurrentIndex(index)
+            else:
+                self.mavlink_serial_port_combo.setEditText(current_port)
+        elif self.mavlink_serial_port_combo.count() > 0:
+            self.mavlink_serial_port_combo.setCurrentIndex(0)
+        self.mavlink_serial_port_combo.blockSignals(False)
+
+        self.mavlink_serial_refresh_btn.setEnabled(serial_support_available())
+        self._on_mavlink_settings_changed()
+
+    def _current_mavlink_transport(self) -> str:
+        return str(self.mavlink_transport_combo.currentData() or 'udp')
+
+    def _preview_mavlink_endpoint(self) -> str:
+        """Return the endpoint string implied by the current UI settings."""
+        if self._current_mavlink_transport() == 'serial':
+            port = self._selected_serial_port_path() or '<select-port>'
+            baud = self.mavlink_serial_baud_spin.value()
+            bytesize = int(self.mavlink_serial_bytesize_combo.currentData() or 8)
+            parity = str(self.mavlink_serial_parity_combo.currentData() or 'N')
+            stopbits = float(self.mavlink_serial_stopbits_combo.currentData() or 1.0)
+            return (
+                f'serial://{port} @ {baud} '
+                f'{bytesize}{parity}{self._format_stopbits_label(stopbits)}'
+            )
+        host = self.mavlink_udp_host_edit.text().strip() or '127.0.0.1'
+        return f'udp://{host}:{self.mavlink_udp_port_spin.value()}'
+
+    def _update_mavlink_status_preview(self) -> None:
+        """Refresh the idle status label from either the service or the UI config."""
+        if not hasattr(self, 'mavlink_status_label'):
+            return
+        endpoint = self._preview_mavlink_endpoint()
+        if self._sitl_service is not None and self._sitl_service.active:
+            endpoint = self._sitl_service.endpoint_description
+        self.mavlink_status_label.setText(endpoint)
+        self.mavlink_status_label.setStyleSheet('color: #888888; font-size: 11px;')
+
+    def _set_mavlink_ui_running(self, active: bool) -> None:
+        """Update button and status styling for transport start/stop."""
+        if active and self._sitl_service is not None:
+            endpoint = self._sitl_service.endpoint_description
+            self._mavlink_log_status_lbl.setText(f'Emitting -> {endpoint}')
+            self._mavlink_log_status_lbl.setStyleSheet('color: #88ff88; font-size: 11px;')
+            self.mavlink_toggle_btn.setText('MAVLink SITL: ON')
+            self.mavlink_toggle_btn.setStyleSheet(
+                'background-color: #2a7a2a; color: #ffffff; font-weight: bold;'
+            )
+            self.mavlink_status_label.setText(endpoint)
+            self.mavlink_status_label.setStyleSheet('color: #88ff88; font-size: 11px;')
+        else:
+            self._mavlink_log_status_lbl.setText('Stopped.')
+            self._mavlink_log_status_lbl.setStyleSheet('color: #888888; font-size: 11px;')
+            self.mavlink_toggle_btn.setText('MAVLink SITL: OFF')
+            self.mavlink_toggle_btn.setStyleSheet('')
+            self._update_mavlink_status_preview()
+        self._apply_mavlink_transport_controls_state()
+
+    def _apply_mavlink_transport_controls_state(self) -> None:
+        """Disable transport edits while the service is active."""
+        active = bool(self._sitl_service is not None and self._sitl_service.active)
+        transport = self._current_mavlink_transport()
+        editable = not active
+
+        self.mavlink_transport_combo.setEnabled(editable)
+        self.mavlink_udp_config_widget.setEnabled(editable and transport == 'udp')
+        self.mavlink_serial_config_widget.setEnabled(editable and transport == 'serial')
+        self.mavlink_serial_refresh_btn.setEnabled(
+            editable and transport == 'serial' and serial_support_available()
+        )
+
+    def _flush_mavlink_service_log_queue(self, service: SitlMavlinkService | None = None) -> None:
+        """Append any queued transport log lines from the MAVLink service."""
+        target = self._sitl_service if service is None else service
+        if target is None:
+            return
+        for line in target.drain_pending_log_lines():
+            self._append_mavlink_log(line)
+
+    def _selected_serial_port_path(self) -> str:
+        """Return the actual serial device path from the combo box selection."""
+        text = self.mavlink_serial_port_combo.currentText().strip()
+        index = self.mavlink_serial_port_combo.currentIndex()
+        if index >= 0:
+            label = self.mavlink_serial_port_combo.itemText(index).strip()
+            data = self.mavlink_serial_port_combo.itemData(index)
+            if data is not None and text == label:
+                return str(data).strip()
+        return text
+
+    @staticmethod
+    def _format_stopbits_label(stopbits: float) -> str:
+        return str(int(stopbits)) if float(stopbits).is_integer() else f'{stopbits:g}'
 
     def eventFilter(self, watched, event):
         if watched is getattr(self, 'viewer_panel', None) and event.type() == QEvent.Resize:
@@ -633,6 +911,7 @@ class RocketViewerApp(QMainWindow):
         if self.static_mode_radio.isChecked():
             self.mode = 'static'
             self.sim_controls_group.setVisible(False)
+            self.mavlink_controls_group.setVisible(False)
             self.static_button_group.setVisible(True)
             self.telemetry_widget.setVisible(False)
             self.mesh_info_group.setVisible(True)
@@ -641,6 +920,15 @@ class RocketViewerApp(QMainWindow):
             # Stop simulation if running
             if self.simulation_controller and self.simulation_controller.is_playing:
                 self.simulation_controller.stop()
+
+            if self._sitl_service is not None and self._sitl_service.active:
+                self.mavlink_toggle_btn.blockSignals(True)
+                self.mavlink_toggle_btn.setChecked(False)
+                self.mavlink_toggle_btn.blockSignals(False)
+                self._sitl_service.stop()
+                self._sitl_service.on_emit = None
+                self._flush_mavlink_service_log_queue()
+                self._set_mavlink_ui_running(False)
             
             # Reset interpolation state
             self.last_state = None
@@ -651,6 +939,7 @@ class RocketViewerApp(QMainWindow):
         else:
             self.mode = 'simulation'
             self.sim_controls_group.setVisible(True)
+            self.mavlink_controls_group.setVisible(True)
             self.static_button_group.setVisible(False)
             self.telemetry_widget.setVisible(True)
             self.mesh_info_group.setVisible(False)
@@ -748,13 +1037,19 @@ class RocketViewerApp(QMainWindow):
             self.current_display_state = None
 
             # (Re-)create the SITL service with the new sensor data.
-            # Stop any running instance first so the port is released cleanly.
-            if self._sitl_service is not None and self._sitl_service.active:
-                self._sitl_service.stop()
+            # Stop any running instance first so its transport is released cleanly.
+            if self._sitl_service is not None:
+                if self._sitl_service.active:
+                    self._sitl_service.stop()
+                self._sitl_service.on_emit = None
+                self._flush_mavlink_service_log_queue(self._sitl_service)
                 if hasattr(self, 'mavlink_toggle_btn'):
+                    self.mavlink_toggle_btn.blockSignals(True)
                     self.mavlink_toggle_btn.setChecked(False)
-                    self.mavlink_toggle_btn.setText('MAVLink SITL: OFF')
+                    self.mavlink_toggle_btn.blockSignals(False)
             self._sitl_service = SitlMavlinkService(sensors_df)
+            self._apply_mavlink_settings_to_service()
+            self._set_mavlink_ui_running(False)
 
             self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
             self.on_progress_changed(0.0)
@@ -768,38 +1063,38 @@ class RocketViewerApp(QMainWindow):
     def on_mavlink_toggle_clicked(self, checked: bool) -> None:
         """Start or stop the MAVLink SITL service."""
         if self._sitl_service is None:
+            self.mavlink_toggle_btn.blockSignals(True)
             self.mavlink_toggle_btn.setChecked(False)
+            self.mavlink_toggle_btn.blockSignals(False)
             self.statusBar().showMessage('Load replay data first before enabling MAVLink SITL')
             return
 
         if checked:
-            self._sitl_service.start()
-            host = self._sitl_service.host
-            port = self._sitl_service.port
-            # Wire the emit callback into the log dock
+            try:
+                self._apply_mavlink_settings_to_service()
+                self._sitl_service.start()
+            except Exception as exc:
+                self._sitl_service.on_emit = None
+                self.mavlink_toggle_btn.blockSignals(True)
+                self.mavlink_toggle_btn.setChecked(False)
+                self.mavlink_toggle_btn.blockSignals(False)
+                self._set_mavlink_ui_running(False)
+                QMessageBox.critical(self, 'MAVLink Start Error', str(exc))
+                return
+
             self._sitl_service.on_emit = self._append_mavlink_log
+            self._flush_mavlink_service_log_queue()
             self._mavlink_log_dock.show()
-            self._mavlink_log_status_lbl.setText(f'Emitting → udp://{host}:{port}')
-            self._mavlink_log_status_lbl.setStyleSheet('color: #88ff88; font-size: 11px;')
-            self.mavlink_toggle_btn.setText('MAVLink SITL: ON')
-            self.mavlink_toggle_btn.setStyleSheet(
-                'background-color: #2a7a2a; color: #ffffff; font-weight: bold;'
-            )
-            self.mavlink_status_label.setText(f'udp://{host}:{port}')
-            self.mavlink_status_label.setStyleSheet('color: #88ff88; font-size: 11px;')
+            self._set_mavlink_ui_running(True)
             self.statusBar().showMessage(
-                f'MAVLink SITL active → udp://{host}:{port}  '
+                f'MAVLink SITL active -> {self._sitl_service.endpoint_description}  '
                 '(IMU/baro/GPS emit at their individual sample rates)'
             )
         else:
             self._sitl_service.stop()
-            if self._sitl_service is not None:
-                self._sitl_service.on_emit = None
-            self._mavlink_log_status_lbl.setText('Stopped.')
-            self._mavlink_log_status_lbl.setStyleSheet('color: #888888; font-size: 11px;')
-            self.mavlink_toggle_btn.setText('MAVLink SITL: OFF')
-            self.mavlink_toggle_btn.setStyleSheet('')
-            self.mavlink_status_label.setStyleSheet('color: #888888; font-size: 11px;')
+            self._sitl_service.on_emit = None
+            self._flush_mavlink_service_log_queue()
+            self._set_mavlink_ui_running(False)
             self.statusBar().showMessage('MAVLink SITL stopped')
 
     def on_start_clicked(self):
@@ -918,6 +1213,7 @@ class RocketViewerApp(QMainWindow):
         # Emit MAVLink SITL packets (rate-gated by sensor_freshness)
         if self._sitl_service is not None:
             self._sitl_service.emit_state(state)
+            self._flush_mavlink_service_log_queue()
 
         # Update telemetry
         self.telemetry_widget.update_telemetry(state)
