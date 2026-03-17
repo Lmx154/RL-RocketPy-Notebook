@@ -28,15 +28,19 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGroupBox, QCheckBox, QTextEdit, QSplitter,
     QFileDialog, QMessageBox, QFrame, QRadioButton, QSlider,
-    QScrollArea
+    QScrollArea, QDockWidget, QPlainTextEdit
 )
 from PySide6.QtCore import Qt, Slot, QEvent
+from PySide6.QtGui import QFont
 from pyvistaqt import QtInteractor
 import pyvista as pv
+
+_MAX_MAVLINK_LOG_LINES = 500  # keep last N lines in the output window
 
 from ..rendering.renderer import RocketRenderer
 from ..simulation import CsvReplayController, load_replay_pair, quaternion_to_matrix
 from ..simulation.quaternion_utils import interpolate_quaternion
+from ..sitl.mavlink_sitl_service import SitlMavlinkService
 from .telemetry_display import TelemetryDisplay
 
 # Suppress VTK warnings that appear during PyVista shutdown
@@ -103,6 +107,9 @@ class RocketViewerApp(QMainWindow):
         self.last_camera_position = None
         self.user_is_interacting = False
         self.replay_overlay_visible = True
+
+        # MAVLink SITL service (created when replay data is loaded)
+        self._sitl_service: SitlMavlinkService | None = None
         
         # Setup UI
         self.init_ui()
@@ -137,6 +144,57 @@ class RocketViewerApp(QMainWindow):
         
         # Status bar
         self.statusBar().showMessage('Ready')
+
+        # MAVLink output dock
+        self._create_mavlink_log_dock()
+
+    def _create_mavlink_log_dock(self) -> None:
+        """Create a bottom dockable panel that shows live MAVLink emit output."""
+        dock = QDockWidget('MAVLink SITL Output', self)
+        dock.setObjectName('mavlinkLogDock')
+        dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.RightDockWidgetArea)
+        dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(4, 4, 4, 4)
+        container_layout.setSpacing(4)
+
+        # Toolbar row
+        toolbar = QHBoxLayout()
+        status_lbl = QLabel('Waiting for MAVLink SITL to be enabled…')
+        status_lbl.setStyleSheet('color: #888888; font-size: 11px;')
+        self._mavlink_log_status_lbl = status_lbl
+        toolbar.addWidget(status_lbl)
+        toolbar.addStretch()
+        clear_btn = QPushButton('Clear')
+        clear_btn.setFixedWidth(60)
+        clear_btn.clicked.connect(self._clear_mavlink_log)
+        toolbar.addWidget(clear_btn)
+        container_layout.addLayout(toolbar)
+
+        # Log area
+        self._mavlink_log = QPlainTextEdit()
+        self._mavlink_log.setReadOnly(True)
+        self._mavlink_log.setMaximumBlockCount(_MAX_MAVLINK_LOG_LINES)
+        mono = QFont('Monospace')
+        mono.setStyleHint(QFont.TypeWriter)
+        mono.setPointSize(9)
+        self._mavlink_log.setFont(mono)
+        self._mavlink_log.setStyleSheet(
+            'background-color: #0d0d0d; color: #c8ffc8;'
+            'border: 1px solid #333333;'
+        )
+        container_layout.addWidget(self._mavlink_log)
+
+        dock.setWidget(container)
+        self.addDockWidget(Qt.BottomDockWidgetArea, dock)
+        dock.hide()  # hidden until MAVLink is enabled
+        self._mavlink_log_dock = dock
     
     def create_control_panel(self) -> QWidget:
         """Create the left control panel with simulation and component controls."""
@@ -361,13 +419,13 @@ class RocketViewerApp(QMainWindow):
         self.replay_overlay.setObjectName('replayOverlay')
         self.replay_overlay.setStyleSheet(
             '#replayOverlay {'
-            'background-color: rgba(24, 24, 24, 165);'
-            'border: 1px solid rgba(230, 230, 230, 90);'
+            'background-color: #181818;'
+            'border: 1px solid #e6e6e6;'
             'border-radius: 10px;'
             '}'
             '#replayOverlay QLabel { color: #f0f0f0; }'
-            '#replayOverlay QPushButton { background-color: rgba(255, 255, 255, 40); color: #f6f6f6; }'
-            '#replayOverlay QPushButton:disabled { color: rgba(246, 246, 246, 110); }'
+            '#replayOverlay QPushButton { background-color: #666666; color: #f6f6f6; }'
+            '#replayOverlay QPushButton:disabled { color: #f6f6f66e; }'
         )
 
         overlay_layout = QVBoxLayout(self.replay_overlay)
@@ -445,10 +503,27 @@ class RocketViewerApp(QMainWindow):
         self.timeline_label.setAlignment(Qt.AlignCenter)
         overlay_layout.addWidget(self.timeline_label)
 
+        # MAVLink SITL row
+        mavlink_layout = QHBoxLayout()
+        self.mavlink_toggle_btn = QPushButton('MAVLink SITL: OFF')
+        self.mavlink_toggle_btn.setCheckable(True)
+        self.mavlink_toggle_btn.setChecked(False)
+        self.mavlink_toggle_btn.clicked.connect(self.on_mavlink_toggle_clicked)
+        self.mavlink_toggle_btn.setToolTip(
+            'Emit MAVLink HIL sensor packets over UDP for SITL.\n'
+            'Respects per-sensor sample rates via freshness flags.'
+        )
+        mavlink_layout.addWidget(self.mavlink_toggle_btn)
+        self.mavlink_status_label = QLabel('udp://127.0.0.1:14560')
+        self.mavlink_status_label.setStyleSheet('color: #888888; font-size: 11px;')
+        mavlink_layout.addWidget(self.mavlink_status_label)
+        mavlink_layout.addStretch()
+        overlay_layout.addLayout(mavlink_layout)
+
         self.show_overlay_btn = QPushButton('Show Replay Overlay', parent)
         self.show_overlay_btn.clicked.connect(lambda: self.set_replay_overlay_visibility(True))
         self.show_overlay_btn.setVisible(False)
-        self.show_overlay_btn.setStyleSheet('background-color: rgba(24, 24, 24, 165); color: #f0f0f0;')
+        self.show_overlay_btn.setStyleSheet('background-color: #181818; color: #f0f0f0;')
 
         self.set_replay_overlay_visibility(True)
 
@@ -672,6 +747,15 @@ class RocketViewerApp(QMainWindow):
             self.last_state = None
             self.current_display_state = None
 
+            # (Re-)create the SITL service with the new sensor data.
+            # Stop any running instance first so the port is released cleanly.
+            if self._sitl_service is not None and self._sitl_service.active:
+                self._sitl_service.stop()
+                if hasattr(self, 'mavlink_toggle_btn'):
+                    self.mavlink_toggle_btn.setChecked(False)
+                    self.mavlink_toggle_btn.setText('MAVLink SITL: OFF')
+            self._sitl_service = SitlMavlinkService(sensors_df)
+
             self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
             self.on_progress_changed(0.0)
             self.statusBar().showMessage(
@@ -681,6 +765,43 @@ class RocketViewerApp(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, 'Replay Load Error', f'Failed to load replay CSVs:\n{exc}')
     
+    def on_mavlink_toggle_clicked(self, checked: bool) -> None:
+        """Start or stop the MAVLink SITL service."""
+        if self._sitl_service is None:
+            self.mavlink_toggle_btn.setChecked(False)
+            self.statusBar().showMessage('Load replay data first before enabling MAVLink SITL')
+            return
+
+        if checked:
+            self._sitl_service.start()
+            host = self._sitl_service.host
+            port = self._sitl_service.port
+            # Wire the emit callback into the log dock
+            self._sitl_service.on_emit = self._append_mavlink_log
+            self._mavlink_log_dock.show()
+            self._mavlink_log_status_lbl.setText(f'Emitting → udp://{host}:{port}')
+            self._mavlink_log_status_lbl.setStyleSheet('color: #88ff88; font-size: 11px;')
+            self.mavlink_toggle_btn.setText('MAVLink SITL: ON')
+            self.mavlink_toggle_btn.setStyleSheet(
+                'background-color: #2a7a2a; color: #ffffff; font-weight: bold;'
+            )
+            self.mavlink_status_label.setText(f'udp://{host}:{port}')
+            self.mavlink_status_label.setStyleSheet('color: #88ff88; font-size: 11px;')
+            self.statusBar().showMessage(
+                f'MAVLink SITL active → udp://{host}:{port}  '
+                '(IMU/baro/GPS emit at their individual sample rates)'
+            )
+        else:
+            self._sitl_service.stop()
+            if self._sitl_service is not None:
+                self._sitl_service.on_emit = None
+            self._mavlink_log_status_lbl.setText('Stopped.')
+            self._mavlink_log_status_lbl.setStyleSheet('color: #888888; font-size: 11px;')
+            self.mavlink_toggle_btn.setText('MAVLink SITL: OFF')
+            self.mavlink_toggle_btn.setStyleSheet('')
+            self.mavlink_status_label.setStyleSheet('color: #888888; font-size: 11px;')
+            self.statusBar().showMessage('MAVLink SITL stopped')
+
     def on_start_clicked(self):
         """Handle start/resume button click."""
         if self.simulation_controller:
@@ -794,11 +915,25 @@ class RocketViewerApp(QMainWindow):
     @Slot(dict)
     def on_simulation_state_updated(self, state):
         """Handle simulation state update from controller."""
+        # Emit MAVLink SITL packets (rate-gated by sensor_freshness)
+        if self._sitl_service is not None:
+            self._sitl_service.emit_state(state)
+
         # Update telemetry
         self.telemetry_widget.update_telemetry(state)
-        
+
         # Render 3D frame
         self.render_simulation_frame(state)
+
+    @Slot(str)
+    def _append_mavlink_log(self, line: str) -> None:
+        """Append a single emit log line to the MAVLink output dock."""
+        self._mavlink_log.appendPlainText(line)
+        sb = self._mavlink_log.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _clear_mavlink_log(self) -> None:
+        self._mavlink_log.clear()
     
     def initialize_simulation_view(self):
         """Initialize the 3D view for simulation mode with static meshes and proper bounds."""
