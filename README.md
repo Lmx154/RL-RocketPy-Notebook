@@ -64,6 +64,37 @@ The replay adapter is built around the current log format:
 
 For the current RocketPy exports, the GNSS columns are interpreted as latitude, longitude, and altitude, then converted into a local ENU frame relative to the first valid GNSS fix.
 
+## SITL WebSocket Replay Bridge
+
+Use the SITL bridge when your firmware in software-in-the-loop needs synchronized replay time and virtual sensors from the same CSV files used by the estimator.
+
+Start the server (defaults to latest `logs/virtual_sensors_full_rate_*.csv`):
+
+```bash
+uv run python -m sim.sitl.websocket_bridge
+```
+
+Optional explicit telemetry file:
+
+```bash
+uv run python -m sim.sitl.websocket_bridge --telemetry logs/virtual_sensors_full_rate_260313_190556.csv
+```
+
+WebSocket endpoints:
+- `ws://127.0.0.1:8765/clock`
+- `ws://127.0.0.1:8765/sensors`
+
+`/clock` command messages (JSON):
+- `{"op": "status"}`
+- `{"op": "sync", "time_s": 2.54}`
+- `{"op": "step", "count": 1}`
+- `{"op": "play", "rate": 1.0}`
+- `{"op": "pause"}`
+- `{"op": "reset"}`
+- `{"op": "seek_index", "index": 150}`
+
+`/clock` emits clock state updates and `/sensors` emits the replayed CSV row for the current replay time. `NaN` values in CSV rows are normalized to `null` for robust JSON decoding in firmware SITL clients.
+
 
 ## If you're going to work on the Itzamna notebook
 
