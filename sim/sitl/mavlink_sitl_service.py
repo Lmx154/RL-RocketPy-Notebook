@@ -107,6 +107,7 @@ class _SerialTransport:
         stopbits: float,
         timeout_s: float,
         log_line: Callable[[str], None] | None,
+        message_handler: Callable[[Any], None] | None,
     ) -> None:
         if _pyserial is None:
             raise RuntimeError(
@@ -119,7 +120,9 @@ class _SerialTransport:
 
         self._timeout_s = max(0.0, float(timeout_s))
         self._log_line = log_line
+        self._message_handler = message_handler
         self._stop_event = threading.Event()
+        self._parser = mavlink2.MAVLink(io.BytesIO())
         self._serial = _pyserial.Serial(
             port=device,
             baudrate=int(baudrate),
@@ -171,8 +174,21 @@ class _SerialTransport:
             if chunk:
                 if self._log_line is not None:
                     self._log_line(_format_serial_rx_line(bytes(chunk)))
+                self._handle_incoming_chunk(bytes(chunk))
             elif waiting == 0 and self._timeout_s <= 0.0:
                 time.sleep(_SERIAL_READ_IDLE_SLEEP_S)
+
+    def _handle_incoming_chunk(self, payload: bytes) -> None:
+        if self._message_handler is None:
+            return
+        for byte in payload:
+            try:
+                message = self._parser.parse_char(bytes([byte]))
+            except Exception:  # pragma: no cover - defensive parser fallback
+                log.debug("Ignoring MAVLink RX parse failure", exc_info=True)
+                return
+            if message is not None:
+                self._message_handler(message)
 
 
 @dataclass
@@ -209,7 +225,9 @@ class SitlMavlinkService:
         default=None, init=False, repr=False
     )
     _pending_log_lines: deque[str] = field(default_factory=deque, init=False, repr=False)
+    _pending_incoming_messages: deque[Any] = field(default_factory=deque, init=False, repr=False)
     _log_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _incoming_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._reference_altitude_m = _resolve_reference_altitude(self.sensors_df)
@@ -309,6 +327,7 @@ class SitlMavlinkService:
                 stopbits=self.serial_stopbits,
                 timeout_s=self.serial_timeout_s,
                 log_line=self._queue_log_line,
+                message_handler=self._queue_incoming_message,
             )
         else:  # pragma: no cover - guarded by GUI controls and type hints
             raise ValueError(f"Unsupported MAVLink transport: {self.transport!r}")
@@ -337,6 +356,13 @@ class SitlMavlinkService:
             lines = list(self._pending_log_lines)
             self._pending_log_lines.clear()
         return lines
+
+    def drain_pending_incoming_messages(self) -> list[Any]:
+        """Return decoded inbound MAVLink messages queued off the GUI thread."""
+        with self._incoming_lock:
+            messages = list(self._pending_incoming_messages)
+            self._pending_incoming_messages.clear()
+        return messages
 
     def emit_state(self, state: dict[str, Any]) -> None:
         """Emit MAVLink packets for the given simulation state.
@@ -550,6 +576,11 @@ class SitlMavlinkService:
         with self._log_lock:
             self._pending_log_lines.append(line)
 
+    def _queue_incoming_message(self, message: Any) -> None:
+        with self._incoming_lock:
+            self._pending_incoming_messages.append(message)
+        self._queue_log_line(_format_incoming_mavlink_line(message))
+
 
 def _resolve_reference_altitude(sensors_df: pd.DataFrame) -> float:
     if "gnss_z" not in sensors_df.columns:
@@ -598,6 +629,18 @@ def _format_serial_rx_line(data: bytes) -> str:
     if len(data) > _SERIAL_RX_PREVIEW_BYTES:
         preview += " ..."
     return f"RX {len(data)}B {preview}"
+
+
+def _format_incoming_mavlink_line(message: Any) -> str:
+    msg_type = str(message.get_type())
+    if msg_type in {"COMMAND_LONG", "COMMAND_INT"}:
+        command_id = int(getattr(message, "command", -1))
+        return f"RX MAVLINK {msg_type} command={command_id}"
+    if msg_type == "STATUSTEXT":
+        text = str(getattr(message, "text", "") or "").strip("\x00 ")
+        severity = int(getattr(message, "severity", 0))
+        return f"RX MAVLINK STATUSTEXT severity={severity} text={text}"
+    return f"RX MAVLINK {msg_type}"
 
 
 def _get_serial_exception_type() -> type[Exception]:

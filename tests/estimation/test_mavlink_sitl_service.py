@@ -90,6 +90,38 @@ class SitlMavlinkServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "pyserial"):
                 service.start()
 
+    def test_serial_service_queues_incoming_command_long_messages(self) -> None:
+        fake_serial_api = SimpleNamespace(
+            Serial=_FakeSerial,
+            SerialException=_FakeSerialException,
+        )
+        _FakeSerial.instances.clear()
+        _FakeSerial.next_reads = [_build_command_long_payload(command=31_000)]
+
+        with patch.object(mavlink_service_module, "_pyserial", fake_serial_api):
+            service = SitlMavlinkService(_sample_sensors_frame())
+            service.configure_serial(
+                port="/dev/ttyUSB0",
+                baudrate=115200,
+                timeout_s=0.01,
+            )
+
+            service.start()
+            incoming = _wait_for_pending_messages(
+                service,
+                expected_type="COMMAND_LONG",
+                timeout_s=0.25,
+            )
+            queued_lines = service.drain_pending_log_lines()
+            service.stop()
+
+        self.assertTrue(incoming)
+        self.assertEqual(incoming[0].get_type(), "COMMAND_LONG")
+        self.assertEqual(int(incoming[0].command), 31_000)
+        self.assertTrue(
+            any(line == "RX MAVLINK COMMAND_LONG command=31000" for line in queued_lines),
+        )
+
 
 class _FakeSocket:
     def __init__(self) -> None:
@@ -109,6 +141,7 @@ class _FakeSerialException(Exception):
 
 class _FakeSerial:
     instances: list["_FakeSerial"] = []
+    next_reads: list[bytes] | None = None
 
     def __init__(
         self,
@@ -129,7 +162,8 @@ class _FakeSerial:
         self.timeout = timeout
         self.write_timeout = write_timeout
         self.written: list[bytes] = []
-        self._reads = [b"\xfe\x01\x02"]
+        self._reads = list(self.__class__.next_reads or [b"\xfe\x01\x02"])
+        self.__class__.next_reads = None
         self.is_open = True
         self.__class__.instances.append(self)
 
@@ -213,6 +247,23 @@ def _wait_for_pending_logs(
     return queued_lines
 
 
+def _wait_for_pending_messages(
+    service: SitlMavlinkService,
+    *,
+    expected_type: str,
+    timeout_s: float,
+) -> list:
+    deadline = time.time() + timeout_s
+    queued_messages = []
+    while time.time() < deadline:
+        new_messages = service.drain_pending_incoming_messages()
+        queued_messages.extend(new_messages)
+        if any(message.get_type() == expected_type for message in queued_messages):
+            return queued_messages
+        time.sleep(0.01)
+    return queued_messages
+
+
 def _decode_mavlink_packets(payloads: list[bytes]) -> list:
     parser = mavlink2.MAVLink(io.BytesIO())
     messages = []
@@ -222,6 +273,29 @@ def _decode_mavlink_packets(payloads: list[bytes]) -> list:
             if message is not None:
                 messages.append(message)
     return messages
+
+
+def _build_command_long_payload(command: int) -> bytes:
+    buffer = io.BytesIO()
+    mav = mavlink2.MAVLink(buffer)
+    mav.srcSystem = 42
+    mav.srcComponent = 7
+    mav.send(
+        mavlink2.MAVLink_command_long_message(
+            target_system=1,
+            target_component=1,
+            command=int(command),
+            confirmation=0,
+            param1=0.0,
+            param2=0.0,
+            param3=0.0,
+            param4=0.0,
+            param5=0.0,
+            param6=0.0,
+            param7=0.0,
+        )
+    )
+    return buffer.getvalue()
 
 
 if __name__ == "__main__":

@@ -30,6 +30,15 @@ uv run python launch_viewer.py
 
 The viewer is kinematics-driven in simulation mode and no longer loads environment/forecast data.
 
+In simulation mode, the 3D viewer now also shows a bottom-right `HIL Events` overlay with
+three panels:
+- `Payload`
+- `Avionics`
+- `Recovery`
+
+The current example seed is:
+- `Payload`: `5000FT altitude servo test`
+
 If the viewer crashes on Linux with a Qt/Wayland window error (`BadWindow`),
 force the backend explicitly:
 
@@ -108,6 +117,33 @@ The MAVLink adapter emits standard `common.xml` messages over UDP:
 - `HIL_GPS` for GNSS fixes derived from the CSV
 
 CSV `NaN` values are normalized to `null` in the JSON adapter. MAVLink packets omit GNSS output when a row does not contain a valid fix.
+
+### Wiring Custom MAVLink HIL Events Into The Viewer
+
+The current viewer already has the UI and decode hook for inbound MAVLink events on the
+serial transport path.
+
+If you want a custom firmware command to appear in the bottom-right HIL events overlay:
+
+1. Pick your custom MAVLink command ID in firmware.
+2. Update `_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID` in `sim/gui/rocket_viewer_app.py`.
+3. Add or edit the mapping in `self._hil_mavlink_command_map` in `RocketViewerApp.__init__`.
+4. When the firmware sends `COMMAND_LONG` or `COMMAND_INT` with that command ID, the viewer
+   will append the mapped text into the correct category panel.
+
+Current example mapping:
+- `COMMAND_LONG.command == 31000` -> `Payload` -> `5000FT altitude servo test`
+
+Relevant integration points:
+- `sim/sitl/mavlink_sitl_service.py`
+  - `_SerialTransport._handle_incoming_chunk(...)` decodes inbound MAVLink bytes.
+  - `SitlMavlinkService.drain_pending_incoming_messages()` exposes decoded messages to the GUI.
+- `sim/gui/rocket_viewer_app.py`
+  - `_handle_incoming_mavlink_message(...)` maps decoded MAVLink messages into HIL overlay events.
+
+Important detail: UDP in the current GUI flow is transmit-only for HIL sensor output. The inbound
+custom-command hook is implemented on the serial/HIL path, which is the right place if your
+firmware is sending commands back to the viewer over MAVLink.
 
 
 ## If you're going to work on the Itzamna notebook

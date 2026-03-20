@@ -46,7 +46,10 @@ from ..sitl.mavlink_sitl_service import (
     list_serial_ports,
     serial_support_available,
 )
+from .hil_event_overlay import HilEventOverlay
 from .telemetry_display import TelemetryDisplay
+
+_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID = 31_000
 
 # Suppress VTK warnings that appear during PyVista shutdown
 # These are harmless cleanup warnings from VTK internal objects
@@ -115,9 +118,16 @@ class RocketViewerApp(QMainWindow):
 
         # MAVLink SITL service (created when replay data is loaded)
         self._sitl_service: SitlMavlinkService | None = None
+        self._hil_mavlink_command_map: dict[int, tuple[str, str]] = {
+            _EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID: (
+                'Payload',
+                '5000FT altitude servo test',
+            ),
+        }
         
         # Setup UI
         self.init_ui()
+        self._reset_hil_events_overlay()
         
         # Render initial view
         self.render_selected_components()
@@ -443,6 +453,7 @@ class RocketViewerApp(QMainWindow):
         self.plotter.iren.add_observer('EndInteractionEvent', self._on_user_interaction_end)
 
         self._create_replay_overlay(panel)
+        self._create_hil_events_overlay(panel)
         panel.installEventFilter(self)
         self._position_replay_overlay_widgets()
         
@@ -564,12 +575,18 @@ class RocketViewerApp(QMainWindow):
 
         self.set_replay_overlay_visibility(True)
 
+    def _create_hil_events_overlay(self, parent: QWidget) -> None:
+        """Create the bottom-right overlay showing categorized HIL events."""
+        self.hil_event_overlay = HilEventOverlay(parent)
+        self.hil_event_overlay.hide()
+
     def _position_replay_overlay_widgets(self) -> None:
         """Position overlay widgets relative to current 3D panel size."""
         if not hasattr(self, 'viewer_panel') or not hasattr(self, 'replay_overlay'):
             return
 
         panel_width = max(0, self.viewer_panel.width())
+        panel_height = max(0, self.viewer_panel.height())
         margin = 14
 
         overlay_width = max(430, min(760, panel_width - (2 * margin)))
@@ -583,15 +600,76 @@ class RocketViewerApp(QMainWindow):
             margin,
         )
 
+        if hasattr(self, 'hil_event_overlay'):
+            events_width = max(300, min(380, panel_width // 3))
+            self.hil_event_overlay.setFixedWidth(events_width)
+            self.hil_event_overlay.adjustSize()
+            self.hil_event_overlay.move(
+                max(margin, panel_width - self.hil_event_overlay.width() - margin),
+                max(margin, panel_height - self.hil_event_overlay.height() - margin),
+            )
+
     def set_replay_overlay_visibility(self, visible: bool) -> None:
         """Set replay overlay visibility while preserving simulation-mode gating."""
         self.replay_overlay_visible = bool(visible)
         is_sim_mode = self.mode == 'simulation'
         self.replay_overlay.setVisible(is_sim_mode and self.replay_overlay_visible)
         self.show_overlay_btn.setVisible(is_sim_mode and (not self.replay_overlay_visible))
+        if hasattr(self, 'hil_event_overlay'):
+            self.hil_event_overlay.setVisible(is_sim_mode)
         if hasattr(self, 'overlay_toggle_btn'):
             self.overlay_toggle_btn.setText('Hide Replay Overlay' if self.replay_overlay_visible else 'Show Replay Overlay')
         self._position_replay_overlay_widgets()
+
+    def _reset_hil_events_overlay(self) -> None:
+        """Clear the event history and seed the current configured example event."""
+        if not hasattr(self, 'hil_event_overlay'):
+            return
+        self.hil_event_overlay.clear_events()
+        self.hil_event_overlay.add_event(
+            'Payload',
+            (
+                'Configured trigger: 5000FT altitude servo test '
+                f'(MAV_CMD {_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID})'
+            ),
+            source='CONFIG',
+        )
+
+    def _add_hil_event(
+        self,
+        category: str,
+        text: str,
+        *,
+        time_s: float | None = None,
+        source: str = 'HIL',
+    ) -> None:
+        """Append an event into the bottom-right HIL overlay."""
+        if not hasattr(self, 'hil_event_overlay'):
+            return
+        self.hil_event_overlay.add_event(category, text, time_s=time_s, source=source)
+
+    def _handle_incoming_mavlink_message(self, message: object) -> None:
+        """Map decoded inbound MAVLink messages into HIL event panels."""
+        if not hasattr(message, 'get_type'):
+            return
+
+        msg_type = str(message.get_type())
+        if msg_type not in {'COMMAND_LONG', 'COMMAND_INT'}:
+            return
+
+        command_id = int(getattr(message, 'command', -1))
+        mapped_event = self._hil_mavlink_command_map.get(command_id)
+        if mapped_event is None:
+            return
+
+        category, text = mapped_event
+        time_s = None
+        if isinstance(self.last_state, dict):
+            raw_time = self.last_state.get('time')
+            if raw_time is not None:
+                time_s = float(raw_time)
+
+        self._add_hil_event(category, text, time_s=time_s, source=msg_type)
 
     def on_overlay_toggle_clicked(self) -> None:
         """Toggle replay overlay visibility from the left-side controls panel."""
@@ -816,12 +894,14 @@ class RocketViewerApp(QMainWindow):
         )
 
     def _flush_mavlink_service_log_queue(self, service: SitlMavlinkService | None = None) -> None:
-        """Append any queued transport log lines from the MAVLink service."""
+        """Append queued transport logs and process inbound MAVLink messages."""
         target = self._sitl_service if service is None else service
         if target is None:
             return
         for line in target.drain_pending_log_lines():
             self._append_mavlink_log(line)
+        for message in target.drain_pending_incoming_messages():
+            self._handle_incoming_mavlink_message(message)
 
     def _selected_serial_port_path(self) -> str:
         """Return the actual serial device path from the combo box selection."""
@@ -1050,6 +1130,7 @@ class RocketViewerApp(QMainWindow):
             self._sitl_service = SitlMavlinkService(sensors_df)
             self._apply_mavlink_settings_to_service()
             self._set_mavlink_ui_running(False)
+            self._reset_hil_events_overlay()
 
             self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
             self.on_progress_changed(0.0)
