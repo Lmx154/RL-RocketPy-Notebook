@@ -144,7 +144,8 @@ SENSOR_POSITION = -2.65  # m (negative = toward tail, mounted near static center
 SENSOR_ORIENTATION = (0, 0, 0)  # degrees (roll, pitch, yaw) - aligned with rocket
 
 # IMU (Accelerometer + Gyroscope) Configuration
-IMU_SAMPLING_RATE = 100  # Hz - typical for flight computers
+TRUTH_SAMPLING_RATE = 500  # Hz - canonical replay truth timeline
+IMU_SAMPLING_RATE = 300  # Hz - canonical session IMU rate
 ACCEL_MEASUREMENT_RANGE = 160  # m/s² (~16g)
 ACCEL_NOISE_DENSITY = 0.0003  # typical for MEMS accelerometers
 ACCEL_NOISE_VARIANCE = 1
@@ -161,7 +162,7 @@ GYRO_RANDOM_WALK_VARIANCE = 1
 GYRO_CONSTANT_BIAS = 0.0
 
 # Barometer Configuration
-BARO_SAMPLING_RATE = 50  # Hz
+BARO_SAMPLING_RATE = 100  # Hz - canonical session barometer rate
 BARO_MEASUREMENT_RANGE = 120000  # Pa (covers sea level to ~10km altitude)
 BARO_NOISE_DENSITY = 0.1  # Pa
 BARO_NOISE_VARIANCE = 1
@@ -170,7 +171,7 @@ BARO_RANDOM_WALK_VARIANCE = 1
 BARO_CONSTANT_BIAS = 0.0
 
 # GNSS Configuration
-GNSS_SAMPLING_RATE = 10  # Hz - typical for GPS modules
+GNSS_SAMPLING_RATE = 10  # Hz - canonical session GPS rate
 GNSS_POSITION_ACCURACY = 3.0  # meters - horizontal accuracy
 GNSS_ALTITUDE_ACCURACY = 5.0  # meters - vertical accuracy
 

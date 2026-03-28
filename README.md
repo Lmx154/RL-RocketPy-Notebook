@@ -58,92 +58,74 @@ The repository now includes a reusable PX4-style state estimation framework unde
 
 It uses a strapdown inertial navigation system for the nominal state and a 15-state error-state Kalman filter for small-angle attitude, velocity, position, gyro bias, and accelerometer bias correction.
 
-You can replay the merged sensor CSV exports directly:
+You can replay a manifest-based session directly for offline estimation:
 
 ```python
-from sim.estimation import run_telemetry_replay
+from sim.estimation.adapters import run_rocketpy_replay
 
-result = run_telemetry_replay("logs/virtual_sensors_full_rate_260310_113255.csv")
+result = run_rocketpy_replay("logs/session_260313_190556")
 estimates = result.estimates
 print(estimates[["time_s", "est_z_m", "est_vz_mps"]].tail())
 ```
 
-The replay adapter is built around the current log format:
+If you need the old merged-table shape for analysis tooling, derive it explicitly from a session:
+
+```python
+from sim.sitl.session import load_replay_session, merge_replay_session_sensors
+
+session = load_replay_session("logs/session_260313_190556")
+telemetry = merge_replay_session_sensors(session)
+```
+
+Legacy `virtual_sensors_full_rate_*.csv` discovery still works for now, but it is deprecated.
+
+The replay adapter consumes the same sensor fields:
 - IMU prediction from `accelerometer_*` and `gyroscope_*`
 - Barometric altitude updates from `barometer_v1`
 - GNSS position updates from `gnss_x`, `gnss_y`, and `gnss_z`
 
 For the current RocketPy exports, the GNSS columns are interpreted as latitude, longitude, and altitude, then converted into a local ENU frame relative to the first valid GNSS fix.
 
-## SITL UDP Replay Bridge
+## SITL Serial HIL
 
-The SITL bridge is layered so the CSV replay core is transport-agnostic, UDP is the command/output transport, and protocol adapters can be swapped independently.
+The runtime SITL path is now serial-only.
 
 Current layers:
-- Replay core: reads `virtual_sensors_full_rate_*.csv` and maintains replay time/index state.
-- UDP transport: listens for replay control commands and emits datagrams to firmware/SITL targets.
-- Protocol adapters:
-	- JSON UDP adapter for debugging or custom glue code.
-	- MAVLink adapter based on the standard `common.xml` dialect via `pymavlink.dialects.v20.common`.
+- Session replay: loads one manifest-based replay session and advances truth and sensors by timestamp.
+- MAVLink codec: emits standard `common.xml` `SYSTEM_TIME`, `HIL_SENSOR`, and `HIL_GPS` messages.
+- Serial transport: writes outbound HIL packets and decodes inbound MAVLink messages from the connected device.
+- Typed feedback: maps inbound commands, logging, and estimator values into reusable feedback objects.
 
-Start the UDP bridge with MAVLink output enabled by default:
-
-```bash
-uv run python -m sim.sitl.udp_bridge
-```
-
-Optional explicit telemetry file and JSON debug output:
-
-```bash
-uv run python -m sim.sitl.udp_bridge \
-	--telemetry logs/virtual_sensors_full_rate_260313_190556.csv \
-	--target-host 127.0.0.1 \
-	--mavlink-target-port 14550 \
-	--json-target-port 14610
-```
-
-UDP control commands go to `udp://0.0.0.0:14600` by default as JSON datagrams:
-- `{"op": "status"}`
-- `{"op": "sync", "time_s": 2.54}`
-- `{"op": "step", "count": 1}`
-- `{"op": "play", "rate": 1.0}`
-- `{"op": "pause"}`
-- `{"op": "reset"}`
-- `{"op": "seek_index", "index": 150}`
-
-The MAVLink adapter emits standard `common.xml` messages over UDP:
-- `SYSTEM_TIME` for replay clock sync
-- `HIL_SENSOR` for IMU and barometer values
-- `HIL_GPS` for GNSS fixes derived from the CSV
-
-CSV `NaN` values are normalized to `null` in the JSON adapter. MAVLink packets omit GNSS output when a row does not contain a valid fix.
+In the viewer, load a replay session, configure the USB serial port in the MAVLink panel, and enable `MAVLink SITL`.
 
 ### Wiring Custom MAVLink HIL Events Into The Viewer
 
-The current viewer already has the UI and decode hook for inbound MAVLink events on the
-serial transport path.
+The viewer now consumes typed feedback objects from the serial SITL layer instead of
+decoding raw MAVLink messages directly.
 
 If you want a custom firmware command to appear in the bottom-right HIL events overlay:
 
 1. Pick your custom MAVLink command ID in firmware.
-2. Update `_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID` in `sim/gui/rocket_viewer_app.py`.
-3. Add or edit the mapping in `self._hil_mavlink_command_map` in `RocketViewerApp.__init__`.
-4. When the firmware sends `COMMAND_LONG` or `COMMAND_INT` with that command ID, the viewer
-   will append the mapped text into the correct category panel.
+2. Add or edit the mapping in `DEFAULT_COMMAND_EVENT_DEFINITIONS` in `sim/sitl/estimator_feedback.py`.
+3. When the firmware sends `COMMAND_LONG` or `COMMAND_INT` with that command ID, the serial
+   service will decode it into a typed `DeviceStateEvent`.
+4. The viewer will render the resulting overlay event in the configured category panel.
 
 Current example mapping:
 - `COMMAND_LONG.command == 31000` -> `Payload` -> `5000FT altitude servo test`
 
 Relevant integration points:
+- `sim/sitl/estimator_feedback.py`
+  - `decode_mavlink_feedback(...)` parses inbound MAVLink into typed feedback domains.
+  - `DEFAULT_COMMAND_EVENT_DEFINITIONS` holds the current command-to-event mapping.
 - `sim/sitl/mavlink_sitl_service.py`
   - `_SerialTransport._handle_incoming_chunk(...)` decodes inbound MAVLink bytes.
-  - `SitlMavlinkService.drain_pending_incoming_messages()` exposes decoded messages to the GUI.
+  - `SitlMavlinkService.drain_pending_feedback()` exposes typed feedback to the GUI.
 - `sim/gui/rocket_viewer_app.py`
-  - `_handle_incoming_mavlink_message(...)` maps decoded MAVLink messages into HIL overlay events.
+  - `_handle_feedback(...)` renders typed feedback into the HIL overlay.
 
-Important detail: UDP in the current GUI flow is transmit-only for HIL sensor output. The inbound
-custom-command hook is implemented on the serial/HIL path, which is the right place if your
-firmware is sending commands back to the viewer over MAVLink.
+Important detail: inbound custom-command handling is implemented on the serial/HIL path, which is
+where firmware should send MAVLink commands back to the viewer.
 
 
 ## If you're going to work on the Itzamna notebook

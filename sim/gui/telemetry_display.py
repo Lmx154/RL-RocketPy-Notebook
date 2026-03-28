@@ -92,7 +92,7 @@ class TelemetryDisplay(QWidget):
         extra_group.layout().addWidget(self._create_row('Apogee:', self.apogee_label))
         layout.addWidget(extra_group)
 
-        # Raw virtual sensor values aligned to current kinematics step
+        # Latest scheduled sensor values plus freshness on the current truth tick
         sensor_group = self._create_group('Virtual Sensors')
         self.accel_label = QLabel('---, ---, --- m/s²')
         self.gyro_label = QLabel('---, ---, --- rad/s')

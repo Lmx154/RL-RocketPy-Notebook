@@ -17,19 +17,18 @@ Usage:
     controller.start()
 """
 
-import time
 import re
+import time
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Optional, Dict, Any
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from rocketpy import Flight
 
-from sim.estimation.adapters.rocketpy_replay import find_latest_matching_log_pair
-
-from .quaternion_utils import quaternion_to_euler
-
+from sim.sitl.replay_session import ReplaySessionScheduler
+from sim.sitl.session import ReplaySession, load_replay_session as load_manifest_replay_session
 
 class SimulationController(QObject):
     """
@@ -382,23 +381,6 @@ KINEMATICS_COLUMNS_14 = [
     'w3_radps',
 ]
 
-SENSOR_COLUMNS = [
-    'time_s',
-    'accelerometer_x',
-    'accelerometer_y',
-    'accelerometer_z',
-    'gyroscope_x',
-    'gyroscope_y',
-    'gyroscope_z',
-    'barometer_v1',
-    'gnss_x',
-    'gnss_y',
-    'gnss_z',
-]
-
-SENSOR_VALUE_COLUMNS = SENSOR_COLUMNS[1:]
-
-
 def _extract_float_tokens(text: str) -> list[float]:
     pattern = r'[-+]?\d*\.\d+(?:[eE][-+]?\d+)?|[-+]?\d+(?:[eE][-+]?\d+)?'
     return [float(token) for token in re.findall(pattern, text)]
@@ -470,95 +452,20 @@ def load_kinematics_csv(path: str | Path) -> pd.DataFrame:
     return frame.sort_values('time_s').reset_index(drop=True)
 
 
-def load_sensor_csv(path: str | Path) -> pd.DataFrame:
-    """Load virtual sensors CSV and ensure canonical columns exist."""
-    frame = pd.read_csv(path)
-    missing = [column for column in SENSOR_COLUMNS if column not in frame.columns]
-    if missing:
-        raise ValueError(f'Sensor CSV missing required columns: {missing}')
-    return frame[SENSOR_COLUMNS].sort_values('time_s').reset_index(drop=True)
-
-
-def load_replay_pair(
+def load_replay_session(
     *,
     logs_directory: str | Path = 'logs',
-    sensor_csv_path: str | Path | None = None,
-    kinematics_csv_path: str | Path | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, Path, Path]:
-    """Load and return synchronized kinematics/sensor dataframes and source paths."""
-    if sensor_csv_path is None and kinematics_csv_path is None:
-        sensor_path, maybe_kinematics = find_latest_matching_log_pair(logs_directory)
-        if maybe_kinematics is None:
-            raise FileNotFoundError('Could not find matching flight_kinematics CSV for latest sensor log')
-        kinematics_path = maybe_kinematics
-    else:
-        sensor_path = Path(sensor_csv_path) if sensor_csv_path is not None else None
-        kinematics_path = Path(kinematics_csv_path) if kinematics_csv_path is not None else None
-
-        if kinematics_path is None and sensor_path is not None:
-            suffix = sensor_path.stem.removeprefix('virtual_sensors_full_rate_')
-            kinematics_path = sensor_path.with_name(f'flight_kinematics_{suffix}.csv')
-        if sensor_path is None and kinematics_path is not None:
-            suffix = kinematics_path.stem.removeprefix('flight_kinematics_')
-            sensor_path = kinematics_path.with_name(f'virtual_sensors_full_rate_{suffix}.csv')
-
-        if sensor_path is None or kinematics_path is None:
-            raise ValueError('Both sensor and kinematics CSV paths are required')
-
-        if not sensor_path.exists():
-            raise FileNotFoundError(f'Sensor CSV not found: {sensor_path}')
-        if not kinematics_path.exists():
-            raise FileNotFoundError(f'Kinematics CSV not found: {kinematics_path}')
-
-    kinematics_df = load_kinematics_csv(kinematics_path)
-    sensors_df = load_sensor_csv(sensor_path)
-    return kinematics_df, sensors_df, Path(sensor_path), Path(kinematics_path)
-
-
-def _align_sensor_columns_to_kinematics(
-    kinematics: pd.DataFrame,
-    sensors: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Align each sensor channel to kinematics time using stale-hold semantics.
-
-    For each kinematics timestep, the sensor value is the latest valid sensor sample
-    at or before that time. Freshness is tracked per channel.
-    """
-    aligned = pd.DataFrame({'time_s': kinematics['time_s'].to_numpy(dtype=float)})
-
-    for column in SENSOR_VALUE_COLUMNS:
-        valid = sensors[['time_s', column]].dropna().copy()
-        sensor_time_column = f'{column}__time_s'
-
-        if valid.empty:
-            aligned[column] = np.nan
-            aligned[f'{column}__fresh'] = False
-            continue
-
-        valid = valid.rename(columns={'time_s': sensor_time_column})
-        merged = pd.merge_asof(
-            aligned[['time_s']],
-            valid,
-            left_on='time_s',
-            right_on=sensor_time_column,
-            direction='backward',
-        )
-
-        aligned[column] = merged[column]
-        aligned[f'{column}__fresh'] = np.isclose(
-            merged['time_s'].to_numpy(dtype=float),
-            merged[sensor_time_column].to_numpy(dtype=float),
-            atol=1e-9,
-            rtol=0.0,
-            equal_nan=False,
-        )
-
-    return aligned
+    session_path: str | Path | None = None,
+) -> ReplaySession:
+    """Load and return one manifest-based replay session."""
+    return load_manifest_replay_session(
+        session_path=session_path,
+        logs_directory=logs_directory,
+    )
 
 
 class CsvReplayController(QObject):
-    """Step-based replay controller for synchronized kinematics + virtual sensors logs."""
+    """Step-based replay controller for manifest-based multi-rate sessions."""
 
     state_updated = Signal(dict)
     simulation_started = Signal()
@@ -566,16 +473,16 @@ class CsvReplayController(QObject):
     simulation_stopped = Signal()
     progress_changed = Signal(float)
 
-    def __init__(self, kinematics: pd.DataFrame, sensors: pd.DataFrame, update_rate: float = 120.0):
+    def __init__(
+        self,
+        replay_session: ReplaySession,
+        update_rate: float = 120.0,
+    ):
         super().__init__()
-        if kinematics.empty:
-            raise ValueError('Kinematics dataframe is empty')
-        if sensors.empty:
-            raise ValueError('Sensors dataframe is empty')
 
-        self.kinematics = kinematics.sort_values('time_s').reset_index(drop=True)
-        self.sensors = sensors.sort_values('time_s').reset_index(drop=True)
-        self.sensor_aligned = _align_sensor_columns_to_kinematics(self.kinematics, self.sensors)
+        self.replay_session = replay_session
+        self.kinematics = replay_session.truth
+        self.scheduler = ReplaySessionScheduler(replay_session)
 
         self.index = 0
         self.is_playing = False
@@ -589,91 +496,30 @@ class CsvReplayController(QObject):
         self.last_update_time: float | None = None
         self.accumulated_time_s = 0.0
 
-        if len(self.kinematics) > 1:
-            dt_values = np.diff(self.kinematics['time_s'].to_numpy(dtype=float))
+        if len(self.scheduler.truth) > 1:
+            dt_values = np.diff(self.scheduler.truth_times_s)
             self.nominal_dt_s = float(np.median(dt_values[dt_values > 0.0])) if np.any(dt_values > 0.0) else 0.01
         else:
             self.nominal_dt_s = 0.01
 
     @property
     def total_steps(self) -> int:
-        return int(len(self.kinematics))
+        return self.scheduler.total_steps
 
     @property
     def at_end(self) -> bool:
-        return self.index >= self.total_steps - 1
+        return self.scheduler.at_end
 
     def _clamp_index(self, index: int) -> int:
-        return max(0, min(int(index), self.total_steps - 1))
+        return self.scheduler.clamp_index(index)
 
     def get_state_at_index(self, index: int) -> Dict[str, Any]:
         idx = self._clamp_index(index)
-        row = self.kinematics.iloc[idx]
-        sensor_row = self.sensor_aligned.iloc[idx]
-
-        e0 = float(row.get('e0', 1.0))
-        e1 = float(row.get('e1', 0.0))
-        e2 = float(row.get('e2', 0.0))
-        e3 = float(row.get('e3', 0.0))
-        phi, theta, psi = quaternion_to_euler(e0, e1, e2, e3)
-
-        vx = float(row.get('vx_mps', 0.0))
-        vy = float(row.get('vy_mps', 0.0))
-        vz = float(row.get('vz_mps', 0.0))
-
-        gnss_alt = sensor_row.get('gnss_z')
-        if pd.notna(gnss_alt):
-            altitude = float(gnss_alt)
-        else:
-            altitude = float(row.get('z_m', 0.0))
-
-        sensors_dict: Dict[str, float | None] = {}
-        sensor_freshness: Dict[str, bool] = {}
-        for column in SENSOR_VALUE_COLUMNS:
-            value = sensor_row.get(column)
-            sensors_dict[column] = float(value) if pd.notna(value) else None
-            sensor_freshness[column] = bool(sensor_row.get(f'{column}__fresh', False))
-
-        state = {
-            'time': float(row['time_s']),
-            'step_index': idx,
-            'total_steps': self.total_steps,
-            'position': {
-                'x': float(row.get('x_m', 0.0)),
-                'y': float(row.get('y_m', 0.0)),
-                'z': float(row.get('z_m', 0.0)),
-                'altitude': altitude,
-            },
-            'gps': {
-                'latitude': float(sensor_row['gnss_x']) if pd.notna(sensor_row.get('gnss_x')) else 0.0,
-                'longitude': float(sensor_row['gnss_y']) if pd.notna(sensor_row.get('gnss_y')) else 0.0,
-            },
-            'quaternion': {'e0': e0, 'e1': e1, 'e2': e2, 'e3': e3},
-            'euler': {'phi': float(phi), 'theta': float(theta), 'psi': float(psi)},
-            'velocity': {
-                'vx': vx,
-                'vy': vy,
-                'vz': vz,
-                'speed': float(np.sqrt(vx * vx + vy * vy + vz * vz)),
-                'horizontal_speed': float(np.sqrt(vx * vx + vy * vy)),
-            },
-            'angular_velocity': {
-                'w1': float(row.get('w1_radps', 0.0)),
-                'w2': float(row.get('w2_radps', 0.0)),
-                'w3': float(row.get('w3_radps', 0.0)),
-            },
-            'mach_number': 0.0,
-            'dynamic_pressure': 0.0,
-            'phase': 'REPLAY',
-            't_final': float(self.kinematics.iloc[-1]['time_s']),
-            'apogee': float(self.kinematics['z_m'].max()),
-            'sensors': sensors_dict,
-            'sensor_freshness': sensor_freshness,
-        }
-        return state
+        self.index = idx
+        return self.scheduler.seek_truth_index(idx)
 
     def get_state_at_time(self, t: float) -> Dict[str, Any]:
-        times = self.kinematics['time_s'].to_numpy(dtype=float)
+        times = self.scheduler.truth_times_s
         idx = int(np.searchsorted(times, float(t), side='left'))
         return self.get_state_at_index(self._clamp_index(idx))
 
@@ -704,6 +550,7 @@ class CsvReplayController(QObject):
                 break
             self.accumulated_time_s -= max(dt_next, 0.0)
             self.index += 1
+            self.scheduler.advance_one_tick()
             advanced = True
 
         if advanced:
@@ -717,6 +564,7 @@ class CsvReplayController(QObject):
             return
         if self.at_end:
             self.index = 0
+            self.scheduler.reset()
             self._emit_current()
         self.is_playing = True
         self.last_update_time = time.time()
@@ -737,6 +585,7 @@ class CsvReplayController(QObject):
         self.is_playing = False
         self.timer.stop()
         self.index = 0
+        self.scheduler.reset()
         self.last_update_time = None
         self.accumulated_time_s = 0.0
         self._emit_current()
@@ -745,6 +594,7 @@ class CsvReplayController(QObject):
 
     def reset(self):
         self.index = 0
+        self.scheduler.reset()
         self.accumulated_time_s = 0.0
         self._emit_current()
 
@@ -755,6 +605,7 @@ class CsvReplayController(QObject):
         else:
             target = int(time_or_progress)
         self.index = self._clamp_index(target)
+        self.scheduler.seek_truth_index(self.index)
         self.accumulated_time_s = 0.0
         self._emit_current()
 
@@ -767,8 +618,8 @@ class CsvReplayController(QObject):
         return float(self.index / (self.total_steps - 1))
 
     def get_time_info(self) -> Dict[str, float]:
-        t_final = float(self.kinematics.iloc[-1]['time_s'])
-        current_time = float(self.kinematics.iloc[self.index]['time_s'])
+        t_final = self.scheduler.t_final_s
+        current_time = self.scheduler.current_time_s()
         return {
             'current_time': current_time,
             't_final': t_final,

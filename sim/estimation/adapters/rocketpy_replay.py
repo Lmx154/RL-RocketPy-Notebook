@@ -6,10 +6,17 @@ import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import numpy as np
 import pandas as pd
 
+from sim.sitl.session import (
+    ReplaySession,
+    find_latest_session_manifest,
+    load_replay_session,
+    merge_replay_session_sensors,
+)
 from ..core import MeasurementUpdateResult, MeasurementUpdateStatus
 from ..measurements import (
     BarometricAltitudeConfig,
@@ -145,7 +152,7 @@ class RocketPyReplayResult:
 
 
 def run_rocketpy_replay(
-    telemetry: str | Path | pd.DataFrame | None = None,
+    telemetry: ReplaySession | str | Path | pd.DataFrame | None = None,
     config: Optional[RocketPyReplayConfig] = None,
 ) -> RocketPyReplayResult:
     """Replay RocketPy telemetry through the phase-6 layered navigation stack."""
@@ -154,10 +161,21 @@ def run_rocketpy_replay(
 
     telemetry_source_path: Optional[Path] = None
     if telemetry is None:
-        telemetry_source_path = find_latest_telemetry_log(replay_config.logs_directory)
-        telemetry = telemetry_source_path
+        telemetry = _load_default_replay_source(replay_config.logs_directory)
+        if isinstance(telemetry, ReplaySession):
+            telemetry_source_path = telemetry.manifest_path
+        else:
+            telemetry_source_path = Path(telemetry)
+    elif isinstance(telemetry, ReplaySession):
+        telemetry_source_path = telemetry.manifest_path
     elif isinstance(telemetry, (str, Path)):
-        telemetry_source_path = Path(telemetry)
+        telemetry_path = Path(telemetry)
+        if telemetry_path.is_dir() or telemetry_path.name == "manifest.json":
+            replay_session = load_replay_session(telemetry_path)
+            telemetry = replay_session
+            telemetry_source_path = replay_session.manifest_path
+        else:
+            telemetry_source_path = telemetry_path
 
     telemetry_frame = _load_telemetry_frame(telemetry, replay_config.time_column)
 
@@ -285,6 +303,12 @@ def run_rocketpy_replay(
 def find_latest_telemetry_log(logs_directory: str | Path) -> Path:
     """Return the newest merged sensor log by timestamped filename."""
 
+    warnings.warn(
+        "find_latest_telemetry_log() is deprecated; prefer manifest-based replay sessions "
+        "and merge_replay_session_sensors() for offline analysis.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logs_path = Path(logs_directory)
     candidates = sorted(logs_path.glob("virtual_sensors_full_rate_*.csv"))
     if not candidates:
@@ -298,6 +322,12 @@ def find_latest_telemetry_log(logs_directory: str | Path) -> Path:
 def find_latest_matching_log_pair(logs_directory: str | Path) -> tuple[Path, Optional[Path]]:
     """Return newest merged sensor log and same-timestamp kinematics log if present."""
 
+    warnings.warn(
+        "find_latest_matching_log_pair() is deprecated; prefer session manifests and "
+        "stream-specific replay files.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     sensor_log = find_latest_telemetry_log(logs_directory)
     suffix = sensor_log.stem.removeprefix("virtual_sensors_full_rate_")
     kinematics_log = sensor_log.with_name(f"flight_kinematics_{suffix}.csv")
@@ -336,14 +366,27 @@ def _build_layered_navigation_stack(
 
 
 def _load_telemetry_frame(
-    telemetry: str | Path | pd.DataFrame,
+    telemetry: ReplaySession | str | Path | pd.DataFrame,
     time_column: str,
 ) -> pd.DataFrame:
-    if isinstance(telemetry, pd.DataFrame):
+    if isinstance(telemetry, ReplaySession):
+        telemetry_frame = merge_replay_session_sensors(telemetry)
+    elif isinstance(telemetry, pd.DataFrame):
         telemetry_frame = telemetry.copy()
     else:
-        telemetry_frame = pd.read_csv(telemetry)
+        telemetry_path = Path(telemetry)
+        if telemetry_path.is_dir() or telemetry_path.name == "manifest.json":
+            telemetry_frame = merge_replay_session_sensors(load_replay_session(telemetry_path))
+        else:
+            telemetry_frame = pd.read_csv(telemetry_path)
     return telemetry_frame.sort_values(time_column).reset_index(drop=True)
+
+
+def _load_default_replay_source(logs_directory: str | Path) -> ReplaySession | Path:
+    try:
+        return load_replay_session(find_latest_session_manifest(logs_directory))
+    except FileNotFoundError:
+        return find_latest_telemetry_log(logs_directory)
 
 
 def _derive_stack_parameters_from_telemetry(

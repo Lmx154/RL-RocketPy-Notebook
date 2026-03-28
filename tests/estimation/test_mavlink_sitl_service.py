@@ -10,36 +10,42 @@ import pandas as pd
 from pymavlink.dialects.v20 import common as mavlink2
 
 import sim.sitl.mavlink_sitl_service as mavlink_service_module
+from sim.sitl.estimator_feedback import DeviceLogEvent, DeviceStateEvent
 from sim.sitl.mavlink_sitl_service import SitlMavlinkService
 
 
 class SitlMavlinkServiceTests(unittest.TestCase):
-    def test_udp_service_keeps_existing_emit_behavior(self) -> None:
-        fake_socket = _FakeSocket()
-        with patch.object(mavlink_service_module.socket, "socket", return_value=fake_socket):
+    def test_serial_service_emits_hil_packets_with_existing_logging(self) -> None:
+        fake_serial_api = SimpleNamespace(
+            Serial=_FakeSerial,
+            SerialException=_FakeSerialException,
+        )
+        _FakeSerial.instances.clear()
+
+        with patch.object(mavlink_service_module, "_pyserial", fake_serial_api):
             lines: list[str] = []
             service = SitlMavlinkService(_sample_sensors_frame())
+            service.configure_serial(port="/dev/ttyUSB0", baudrate=115200)
             service.on_emit = lines.append
 
             service.start()
             service.emit_state(_sample_state())
             service.stop()
 
-        messages = _decode_mavlink_packets([payload for payload, _target in fake_socket.sent])
+        messages = _decode_mavlink_packets(_FakeSerial.instances[0].written)
 
         self.assertEqual(
             [message.get_type() for message in messages],
             ["SYSTEM_TIME", "HIL_SENSOR", "HIL_GPS"],
         )
-        self.assertEqual(fake_socket.sent[0][1], ("127.0.0.1", 14560))
         self.assertTrue(lines)
-        self.assertIn("udp://127.0.0.1:14560", lines[0])
+        self.assertIn("serial:///dev/ttyUSB0 @ 115200 8N1", lines[0])
         self.assertIn("HIL_SENSOR", lines[0])
         self.assertIn("HIL_GPS", lines[0])
-        self.assertEqual(
-            service.drain_pending_log_lines(),
-            ["OPEN udp://127.0.0.1:14560", "CLOSE udp://127.0.0.1:14560"],
-        )
+        queued_lines = service.drain_pending_log_lines()
+        self.assertTrue(any(line.startswith("RX ") for line in queued_lines))
+        self.assertTrue(any(line == "OPEN serial:///dev/ttyUSB0 @ 115200 8N1" for line in queued_lines))
+        self.assertTrue(any(line == "CLOSE serial:///dev/ttyUSB0 @ 115200 8N1" for line in queued_lines))
 
     def test_serial_service_writes_packets_and_logs_rx_activity(self) -> None:
         fake_serial_api = SimpleNamespace(
@@ -90,6 +96,31 @@ class SitlMavlinkServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "pyserial"):
                 service.start()
 
+    def test_emit_state_only_sends_system_time_when_no_sensor_stream_is_fresh(self) -> None:
+        fake_serial_api = SimpleNamespace(
+            Serial=_FakeSerial,
+            SerialException=_FakeSerialException,
+        )
+        _FakeSerial.instances.clear()
+
+        with patch.object(mavlink_service_module, "_pyserial", fake_serial_api):
+            service = SitlMavlinkService(_sample_sensors_frame())
+            service.configure_serial(port="/dev/ttyUSB0", baudrate=115200)
+
+            stale_state = _sample_state()
+            stale_state["sensor_freshness"] = {
+                "accelerometer_x": False,
+                "barometer_v1": False,
+                "gnss_x": False,
+            }
+
+            service.start()
+            service.emit_state(stale_state)
+            service.stop()
+
+        messages = _decode_mavlink_packets(_FakeSerial.instances[0].written)
+        self.assertEqual([message.get_type() for message in messages], ["SYSTEM_TIME"])
+
     def test_serial_service_queues_incoming_command_long_messages(self) -> None:
         fake_serial_api = SimpleNamespace(
             Serial=_FakeSerial,
@@ -107,32 +138,63 @@ class SitlMavlinkServiceTests(unittest.TestCase):
             )
 
             service.start()
-            incoming = _wait_for_pending_messages(
+            incoming = _wait_for_pending_feedback(
                 service,
-                expected_type="COMMAND_LONG",
+                expected_feedback_type=DeviceStateEvent,
                 timeout_s=0.25,
             )
             queued_lines = service.drain_pending_log_lines()
             service.stop()
 
         self.assertTrue(incoming)
-        self.assertEqual(incoming[0].get_type(), "COMMAND_LONG")
-        self.assertEqual(int(incoming[0].command), 31_000)
+        self.assertIsInstance(incoming[0], DeviceStateEvent)
+        self.assertEqual(incoming[0].source_message_type, "COMMAND_LONG")
+        self.assertEqual(int(incoming[0].command_id or -1), 31_000)
+        overlay_event = incoming[0].overlay_event()
+        self.assertIsNotNone(overlay_event)
+        assert overlay_event is not None
+        self.assertEqual(overlay_event.category, "Payload")
+        self.assertEqual(overlay_event.text, "5000FT altitude servo test")
         self.assertTrue(
             any(line == "RX MAVLINK COMMAND_LONG command=31000" for line in queued_lines),
         )
 
+    def test_serial_service_queues_incoming_statustext_feedback(self) -> None:
+        fake_serial_api = SimpleNamespace(
+            Serial=_FakeSerial,
+            SerialException=_FakeSerialException,
+        )
+        _FakeSerial.instances.clear()
+        _FakeSerial.next_reads = [_build_statustext_payload(severity=4, text="sd logger armed")]
 
-class _FakeSocket:
-    def __init__(self) -> None:
-        self.sent: list[tuple[bytes, tuple[str, int]]] = []
-        self.closed = False
+        with patch.object(mavlink_service_module, "_pyserial", fake_serial_api):
+            service = SitlMavlinkService(_sample_sensors_frame())
+            service.configure_serial(
+                port="/dev/ttyUSB0",
+                baudrate=115200,
+                timeout_s=0.01,
+            )
 
-    def sendto(self, payload: bytes, target: tuple[str, int]) -> None:
-        self.sent.append((payload, target))
+            service.start()
+            incoming = _wait_for_pending_feedback(
+                service,
+                expected_feedback_type=DeviceLogEvent,
+                timeout_s=0.25,
+            )
+            queued_lines = service.drain_pending_log_lines()
+            service.stop()
 
-    def close(self) -> None:
-        self.closed = True
+        self.assertTrue(incoming)
+        self.assertIsInstance(incoming[0], DeviceLogEvent)
+        self.assertEqual(incoming[0].event_type, "statustext")
+        self.assertEqual(incoming[0].text, "sd logger armed")
+        overlay_event = incoming[0].overlay_event()
+        self.assertIsNotNone(overlay_event)
+        assert overlay_event is not None
+        self.assertEqual(overlay_event.text, "STATUSTEXT[4] sd logger armed")
+        self.assertTrue(
+            any(line == "RX MAVLINK STATUSTEXT severity=4 text=sd logger armed" for line in queued_lines),
+        )
 
 
 class _FakeSerialException(Exception):
@@ -247,21 +309,24 @@ def _wait_for_pending_logs(
     return queued_lines
 
 
-def _wait_for_pending_messages(
+def _wait_for_pending_feedback(
     service: SitlMavlinkService,
     *,
-    expected_type: str,
+    expected_feedback_type: type,
     timeout_s: float,
 ) -> list:
     deadline = time.time() + timeout_s
-    queued_messages = []
+    queued_feedback = []
     while time.time() < deadline:
-        new_messages = service.drain_pending_incoming_messages()
-        queued_messages.extend(new_messages)
-        if any(message.get_type() == expected_type for message in queued_messages):
-            return queued_messages
+        new_feedback = service.drain_pending_feedback()
+        queued_feedback.extend(new_feedback)
+        if any(
+            isinstance(feedback, expected_feedback_type)
+            for feedback in queued_feedback
+        ):
+            return queued_feedback
         time.sleep(0.01)
-    return queued_messages
+    return queued_feedback
 
 
 def _decode_mavlink_packets(payloads: list[bytes]) -> list:
@@ -293,6 +358,22 @@ def _build_command_long_payload(command: int) -> bytes:
             param5=0.0,
             param6=0.0,
             param7=0.0,
+        )
+    )
+    return buffer.getvalue()
+
+
+def _build_statustext_payload(*, severity: int, text: str) -> bytes:
+    buffer = io.BytesIO()
+    mav = mavlink2.MAVLink(buffer)
+    mav.srcSystem = 42
+    mav.srcComponent = 7
+    mav.send(
+        mavlink2.MAVLink_statustext_message(
+            severity=int(severity),
+            text=text.encode("utf-8"),
+            id=0,
+            chunk_seq=0,
         )
     )
     return buffer.getvalue()

@@ -39,8 +39,13 @@ import pyvista as pv
 _MAX_MAVLINK_LOG_LINES = 500  # keep last N lines in the output window
 
 from ..rendering.renderer import RocketRenderer
-from ..simulation import CsvReplayController, load_replay_pair, quaternion_to_matrix
+from ..simulation import CsvReplayController, load_replay_session, quaternion_to_matrix
 from ..simulation.quaternion_utils import interpolate_quaternion
+from ..sitl.estimator_feedback import (
+    DEFAULT_COMMAND_EVENT_DEFINITIONS,
+    DEFAULT_PAYLOAD_SERVO_TEST_COMMAND_ID,
+    MavlinkFeedback,
+)
 from ..sitl.mavlink_sitl_service import (
     SitlMavlinkService,
     list_serial_ports,
@@ -48,8 +53,6 @@ from ..sitl.mavlink_sitl_service import (
 )
 from .hil_event_overlay import HilEventOverlay
 from .telemetry_display import TelemetryDisplay
-
-_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID = 31_000
 
 # Suppress VTK warnings that appear during PyVista shutdown
 # These are harmless cleanup warnings from VTK internal objects
@@ -87,8 +90,8 @@ class RocketViewerApp(QMainWindow):
         # Simulation state
         self.mode = 'static'  # 'static' or 'simulation'
         self.simulation_controller = None
-        self.replay_sensor_path = None
-        self.replay_kinematics_path = None
+        self.replay_session_dir = None
+        self.replay_manifest_path = None
         self.rail_length = 5.1816  # Default, will be updated from config
         
         # Original rocket mesh (cached for static mode)
@@ -118,12 +121,6 @@ class RocketViewerApp(QMainWindow):
 
         # MAVLink SITL service (created when replay data is loaded)
         self._sitl_service: SitlMavlinkService | None = None
-        self._hil_mavlink_command_map: dict[int, tuple[str, str]] = {
-            _EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID: (
-                'Payload',
-                '5000FT altitude servo test',
-            ),
-        }
         
         # Setup UI
         self.init_ui()
@@ -354,7 +351,7 @@ class RocketViewerApp(QMainWindow):
         layout = QVBoxLayout()
         
         # Replay loading
-        self.load_replay_btn = QPushButton('📂 Load Replay CSV Pair')
+        self.load_replay_btn = QPushButton('📂 Load Replay Session')
         self.load_replay_btn.setMinimumHeight(45)
         self.load_replay_btn.setStyleSheet('font-weight: bold; font-size: 11pt;')
         self.load_replay_btn.clicked.connect(self.on_load_replay_clicked)
@@ -380,13 +377,13 @@ class RocketViewerApp(QMainWindow):
         return group
 
     def create_mavlink_controls_group(self) -> QGroupBox:
-        """Create the left-side MAVLink transport configuration panel."""
+        """Create the left-side MAVLink serial configuration panel."""
         group = QGroupBox('MAVLink Output')
         layout = QVBoxLayout()
 
         description = QLabel(
-            'Select the MAVLink transport here. Use UDP for the current SITL flow '
-            'or USB serial for direct HIL on hardware.'
+            'Configure the USB serial link used for MAVLink HIL output and inbound '
+            'device feedback.'
         )
         description.setWordWrap(True)
         layout.addWidget(description)
@@ -556,7 +553,7 @@ class RocketViewerApp(QMainWindow):
         self.mavlink_toggle_btn.setChecked(False)
         self.mavlink_toggle_btn.clicked.connect(self.on_mavlink_toggle_clicked)
         self.mavlink_toggle_btn.setToolTip(
-            'Emit MAVLink HIL sensor packets over UDP or USB serial.\n'
+            'Emit MAVLink HIL sensor packets over USB serial.\n'
             'Respects per-sensor sample rates via freshness flags.'
         )
         mavlink_layout.addWidget(self.mavlink_toggle_btn)
@@ -566,7 +563,8 @@ class RocketViewerApp(QMainWindow):
         mavlink_layout.addStretch()
         overlay_layout.addLayout(mavlink_layout)
         self._refresh_serial_ports()
-        self._on_mavlink_transport_changed()
+        self._on_mavlink_settings_changed()
+        self._apply_mavlink_transport_controls_state()
 
         self.show_overlay_btn = QPushButton('Show Replay Overlay', parent)
         self.show_overlay_btn.clicked.connect(lambda: self.set_replay_overlay_visibility(True))
@@ -625,12 +623,15 @@ class RocketViewerApp(QMainWindow):
         """Clear the event history and seed the current configured example event."""
         if not hasattr(self, 'hil_event_overlay'):
             return
+        example_event = DEFAULT_COMMAND_EVENT_DEFINITIONS[
+            DEFAULT_PAYLOAD_SERVO_TEST_COMMAND_ID
+        ]
         self.hil_event_overlay.clear_events()
         self.hil_event_overlay.add_event(
-            'Payload',
+            example_event.category,
             (
-                'Configured trigger: 5000FT altitude servo test '
-                f'(MAV_CMD {_EXAMPLE_PAYLOAD_SERVO_TEST_COMMAND_ID})'
+                f'Configured trigger: {example_event.text} '
+                f'(MAV_CMD {example_event.command_id})'
             ),
             source='CONFIG',
         )
@@ -648,35 +649,31 @@ class RocketViewerApp(QMainWindow):
             return
         self.hil_event_overlay.add_event(category, text, time_s=time_s, source=source)
 
-    def _handle_incoming_mavlink_message(self, message: object) -> None:
-        """Map decoded inbound MAVLink messages into HIL event panels."""
-        if not hasattr(message, 'get_type'):
+    def _handle_feedback(self, feedback: MavlinkFeedback) -> None:
+        """Render typed SITL feedback without decoding raw MAVLink in the GUI."""
+        overlay_event = feedback.overlay_event()
+        if overlay_event is None:
             return
 
-        msg_type = str(message.get_type())
-        if msg_type not in {'COMMAND_LONG', 'COMMAND_INT'}:
-            return
-
-        command_id = int(getattr(message, 'command', -1))
-        mapped_event = self._hil_mavlink_command_map.get(command_id)
-        if mapped_event is None:
-            return
-
-        category, text = mapped_event
         time_s = None
         if isinstance(self.last_state, dict):
             raw_time = self.last_state.get('time')
             if raw_time is not None:
                 time_s = float(raw_time)
 
-        self._add_hil_event(category, text, time_s=time_s, source=msg_type)
+        self._add_hil_event(
+            overlay_event.category,
+            overlay_event.text,
+            time_s=time_s,
+            source=overlay_event.source,
+        )
 
     def on_overlay_toggle_clicked(self) -> None:
         """Toggle replay overlay visibility from the left-side controls panel."""
         self.set_replay_overlay_visibility(not self.replay_overlay_visible)
 
     def _create_mavlink_transport_controls(self, overlay_layout: QVBoxLayout) -> None:
-        """Create the transport picker and config editors for MAVLink output."""
+        """Create the serial config editors for MAVLink output."""
         frame = QFrame()
         frame.setStyleSheet('QFrame { border: 1px solid #3a3a3a; border-radius: 4px; }')
 
@@ -686,28 +683,7 @@ class RocketViewerApp(QMainWindow):
         layout.setVerticalSpacing(6)
 
         layout.addWidget(QLabel('Transport'), 0, 0)
-        self.mavlink_transport_combo = QComboBox()
-        self.mavlink_transport_combo.addItem('UDP', 'udp')
-        self.mavlink_transport_combo.addItem('USB Serial', 'serial')
-        self.mavlink_transport_combo.currentIndexChanged.connect(self._on_mavlink_transport_changed)
-        layout.addWidget(self.mavlink_transport_combo, 0, 1, 1, 3)
-
-        self.mavlink_udp_config_widget = QWidget()
-        udp_layout = QGridLayout(self.mavlink_udp_config_widget)
-        udp_layout.setContentsMargins(0, 0, 0, 0)
-        udp_layout.setHorizontalSpacing(8)
-        udp_layout.setVerticalSpacing(4)
-        udp_layout.addWidget(QLabel('Host'), 0, 0)
-        self.mavlink_udp_host_edit = QLineEdit('127.0.0.1')
-        self.mavlink_udp_host_edit.textChanged.connect(self._on_mavlink_settings_changed)
-        udp_layout.addWidget(self.mavlink_udp_host_edit, 0, 1)
-        udp_layout.addWidget(QLabel('Port'), 0, 2)
-        self.mavlink_udp_port_spin = QSpinBox()
-        self.mavlink_udp_port_spin.setRange(1, 65535)
-        self.mavlink_udp_port_spin.setValue(14560)
-        self.mavlink_udp_port_spin.valueChanged.connect(self._on_mavlink_settings_changed)
-        udp_layout.addWidget(self.mavlink_udp_port_spin, 0, 3)
-        layout.addWidget(self.mavlink_udp_config_widget, 1, 0, 1, 4)
+        layout.addWidget(QLabel('USB Serial'), 0, 1, 1, 3)
 
         self.mavlink_serial_config_widget = QWidget()
         serial_layout = QGridLayout(self.mavlink_serial_config_widget)
@@ -763,19 +739,9 @@ class RocketViewerApp(QMainWindow):
         self.mavlink_serial_timeout_spin.setValue(20)
         self.mavlink_serial_timeout_spin.valueChanged.connect(self._on_mavlink_settings_changed)
         serial_layout.addWidget(self.mavlink_serial_timeout_spin, 3, 1)
-        layout.addWidget(self.mavlink_serial_config_widget, 2, 0, 1, 4)
+        layout.addWidget(self.mavlink_serial_config_widget, 1, 0, 1, 4)
 
         overlay_layout.addWidget(frame)
-
-    def _on_mavlink_transport_changed(self) -> None:
-        """Show the config section for the currently selected transport."""
-        transport = self._current_mavlink_transport()
-        self.mavlink_udp_config_widget.setVisible(transport == 'udp')
-        self.mavlink_serial_config_widget.setVisible(transport == 'serial')
-        if transport == 'serial':
-            self._refresh_serial_ports()
-        self._on_mavlink_settings_changed()
-        self._apply_mavlink_transport_controls_state()
 
     def _on_mavlink_settings_changed(self) -> None:
         """Push the current transport settings into the service and status preview."""
@@ -789,20 +755,14 @@ class RocketViewerApp(QMainWindow):
         if self._sitl_service is None:
             return
 
-        if self._current_mavlink_transport() == 'serial':
-            self._sitl_service.configure_serial(
-                port=self._selected_serial_port_path(),
-                baudrate=self.mavlink_serial_baud_spin.value(),
-                bytesize=int(self.mavlink_serial_bytesize_combo.currentData() or 8),
-                parity=str(self.mavlink_serial_parity_combo.currentData() or 'N'),
-                stopbits=float(self.mavlink_serial_stopbits_combo.currentData() or 1.0),
-                timeout_s=self.mavlink_serial_timeout_spin.value() / 1000.0,
-            )
-        else:
-            self._sitl_service.configure_udp(
-                host=self.mavlink_udp_host_edit.text().strip() or '127.0.0.1',
-                port=self.mavlink_udp_port_spin.value(),
-            )
+        self._sitl_service.configure_serial(
+            port=self._selected_serial_port_path(),
+            baudrate=self.mavlink_serial_baud_spin.value(),
+            bytesize=int(self.mavlink_serial_bytesize_combo.currentData() or 8),
+            parity=str(self.mavlink_serial_parity_combo.currentData() or 'N'),
+            stopbits=float(self.mavlink_serial_stopbits_combo.currentData() or 1.0),
+            timeout_s=self.mavlink_serial_timeout_spin.value() / 1000.0,
+        )
 
     def _refresh_serial_ports(self) -> None:
         """Refresh the USB serial port picker from the local machine."""
@@ -832,23 +792,17 @@ class RocketViewerApp(QMainWindow):
         self.mavlink_serial_refresh_btn.setEnabled(serial_support_available())
         self._on_mavlink_settings_changed()
 
-    def _current_mavlink_transport(self) -> str:
-        return str(self.mavlink_transport_combo.currentData() or 'udp')
-
     def _preview_mavlink_endpoint(self) -> str:
         """Return the endpoint string implied by the current UI settings."""
-        if self._current_mavlink_transport() == 'serial':
-            port = self._selected_serial_port_path() or '<select-port>'
-            baud = self.mavlink_serial_baud_spin.value()
-            bytesize = int(self.mavlink_serial_bytesize_combo.currentData() or 8)
-            parity = str(self.mavlink_serial_parity_combo.currentData() or 'N')
-            stopbits = float(self.mavlink_serial_stopbits_combo.currentData() or 1.0)
-            return (
-                f'serial://{port} @ {baud} '
-                f'{bytesize}{parity}{self._format_stopbits_label(stopbits)}'
-            )
-        host = self.mavlink_udp_host_edit.text().strip() or '127.0.0.1'
-        return f'udp://{host}:{self.mavlink_udp_port_spin.value()}'
+        port = self._selected_serial_port_path() or '<select-port>'
+        baud = self.mavlink_serial_baud_spin.value()
+        bytesize = int(self.mavlink_serial_bytesize_combo.currentData() or 8)
+        parity = str(self.mavlink_serial_parity_combo.currentData() or 'N')
+        stopbits = float(self.mavlink_serial_stopbits_combo.currentData() or 1.0)
+        return (
+            f'serial://{port} @ {baud} '
+            f'{bytesize}{parity}{self._format_stopbits_label(stopbits)}'
+        )
 
     def _update_mavlink_status_preview(self) -> None:
         """Refresh the idle status label from either the service or the UI config."""
@@ -883,25 +837,20 @@ class RocketViewerApp(QMainWindow):
     def _apply_mavlink_transport_controls_state(self) -> None:
         """Disable transport edits while the service is active."""
         active = bool(self._sitl_service is not None and self._sitl_service.active)
-        transport = self._current_mavlink_transport()
         editable = not active
 
-        self.mavlink_transport_combo.setEnabled(editable)
-        self.mavlink_udp_config_widget.setEnabled(editable and transport == 'udp')
-        self.mavlink_serial_config_widget.setEnabled(editable and transport == 'serial')
-        self.mavlink_serial_refresh_btn.setEnabled(
-            editable and transport == 'serial' and serial_support_available()
-        )
+        self.mavlink_serial_config_widget.setEnabled(editable)
+        self.mavlink_serial_refresh_btn.setEnabled(editable and serial_support_available())
 
     def _flush_mavlink_service_log_queue(self, service: SitlMavlinkService | None = None) -> None:
-        """Append queued transport logs and process inbound MAVLink messages."""
+        """Append queued transport logs and process typed inbound device feedback."""
         target = self._sitl_service if service is None else service
         if target is None:
             return
         for line in target.drain_pending_log_lines():
             self._append_mavlink_log(line)
-        for message in target.drain_pending_incoming_messages():
-            self._handle_incoming_mavlink_message(message)
+        for feedback in target.drain_pending_feedback():
+            self._handle_feedback(feedback)
 
     def _selected_serial_port_path(self) -> str:
         """Return the actual serial device path from the combo box selection."""
@@ -1047,50 +996,43 @@ class RocketViewerApp(QMainWindow):
         return Path(__file__).resolve().parents[2] / 'logs'
 
     def on_load_replay_clicked(self):
-        """Prompt for kinematics CSV, then load matching virtual sensors CSV."""
+        """Prompt for a replay session manifest or folder."""
         logs_dir = self._default_logs_directory()
-        kinematics_path, _ = QFileDialog.getOpenFileName(
+        manifest_path, _ = QFileDialog.getOpenFileName(
             self,
-            'Select flight kinematics CSV',
+            'Select replay session manifest',
             str(logs_dir),
-            'CSV Files (*.csv)',
+            'Session Manifest (manifest.json *.json);;JSON Files (*.json)',
         )
-        if not kinematics_path:
+        if manifest_path:
+            self.load_replay_data(session_path=manifest_path)
             return
 
-        kinematics_file = Path(kinematics_path)
-        suffix = kinematics_file.stem.removeprefix('flight_kinematics_')
-        sensor_candidate = kinematics_file.with_name(f'virtual_sensors_full_rate_{suffix}.csv')
+        session_dir = QFileDialog.getExistingDirectory(
+            self,
+            'Select replay session folder',
+            str(logs_dir),
+        )
+        if session_dir:
+            self.load_replay_data(session_path=session_dir)
 
-        if sensor_candidate.exists():
-            sensor_path = str(sensor_candidate)
-        else:
-            sensor_path, _ = QFileDialog.getOpenFileName(
-                self,
-                'Select virtual sensors CSV',
-                str(logs_dir),
-                'CSV Files (*.csv)',
-            )
-            if not sensor_path:
-                return
-
-        self.load_replay_data(sensor_csv_path=sensor_path, kinematics_csv_path=str(kinematics_file))
-
-    def load_replay_data(self, sensor_csv_path: str | None = None, kinematics_csv_path: str | None = None):
-        """Load and wire synchronized kinematics/sensor replay data."""
+    def load_replay_data(self, session_path: str | None = None):
+        """Load and wire one manifest-based replay session."""
         try:
             if self.simulation_controller and self.simulation_controller.is_playing:
                 self.simulation_controller.pause()
 
-            kinematics_df, sensors_df, sensor_path, kinematics_path = load_replay_pair(
+            replay_session = load_replay_session(
                 logs_directory=self._default_logs_directory(),
-                sensor_csv_path=sensor_csv_path,
-                kinematics_csv_path=kinematics_csv_path,
+                session_path=session_path,
             )
-            self.replay_sensor_path = sensor_path
-            self.replay_kinematics_path = kinematics_path
+            self.replay_session_dir = replay_session.session_dir
+            self.replay_manifest_path = replay_session.manifest_path
 
-            self.simulation_controller = CsvReplayController(kinematics_df, sensors_df, update_rate=120.0)
+            self.simulation_controller = CsvReplayController(
+                replay_session,
+                update_rate=120.0,
+            )
             self.simulation_controller.state_updated.connect(self.on_simulation_state_updated)
             self.simulation_controller.progress_changed.connect(self.on_progress_changed)
 
@@ -1104,9 +1046,25 @@ class RocketViewerApp(QMainWindow):
             self.timeline_slider.setMaximum(self.simulation_controller.total_steps - 1)
             self.timeline_slider.setValue(0)
 
-            self.replay_source_label.setText(
-                f'Replay source:\n- {kinematics_path.name}\n- {sensor_path.name}'
-            )
+            source_lines = [
+                f'Replay session: {replay_session.session_dir.name}',
+                f'- {replay_session.manifest_path.name}',
+                f'- {replay_session.stream_paths["truth"].name}',
+                f'- {replay_session.stream_paths["imu"].name}',
+                f'- {replay_session.stream_paths["baro"].name}',
+                f'- {replay_session.stream_paths["gps"].name}',
+            ]
+            if "mag" in replay_session.stream_paths:
+                source_lines.append(f'- {replay_session.stream_paths["mag"].name}')
+            if "estimator_feedback" in replay_session.stream_paths:
+                source_lines.append(
+                    f'- {replay_session.stream_paths["estimator_feedback"].name}'
+                )
+            if "device_events" in replay_session.stream_paths:
+                source_lines.append(
+                    f'- {replay_session.stream_paths["device_events"].name}'
+                )
+            self.replay_source_label.setText('\n'.join(source_lines))
 
             self.trajectory_points = []
             self.rocket_actors = {}
@@ -1127,7 +1085,7 @@ class RocketViewerApp(QMainWindow):
                     self.mavlink_toggle_btn.blockSignals(True)
                     self.mavlink_toggle_btn.setChecked(False)
                     self.mavlink_toggle_btn.blockSignals(False)
-            self._sitl_service = SitlMavlinkService(sensors_df)
+            self._sitl_service = SitlMavlinkService(replay_session)
             self._apply_mavlink_settings_to_service()
             self._set_mavlink_ui_running(False)
             self._reset_hil_events_overlay()
@@ -1135,11 +1093,11 @@ class RocketViewerApp(QMainWindow):
             self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
             self.on_progress_changed(0.0)
             self.statusBar().showMessage(
-                f'Loaded replay with {self.simulation_controller.total_steps:,} kinematics steps '
-                f'and {len(sensors_df):,} sensor rows'
+                f'Loaded replay session {replay_session.session_dir.name} with '
+                f'{self.simulation_controller.total_steps:,} truth steps'
             )
         except Exception as exc:
-            QMessageBox.critical(self, 'Replay Load Error', f'Failed to load replay CSVs:\n{exc}')
+            QMessageBox.critical(self, 'Replay Load Error', f'Failed to load replay session:\n{exc}')
     
     def on_mavlink_toggle_clicked(self, checked: bool) -> None:
         """Start or stop the MAVLink SITL service."""
@@ -1241,7 +1199,7 @@ class RocketViewerApp(QMainWindow):
             self.simulation_controller.seek(int(value), is_progress=False)
 
     def on_prev_step_clicked(self):
-        """Move replay cursor to previous kinematics step."""
+        """Move replay cursor to the previous truth step."""
         if not self.simulation_controller:
             return
         if self.simulation_controller.is_playing:
@@ -1251,7 +1209,7 @@ class RocketViewerApp(QMainWindow):
         self.simulation_controller.seek(self.simulation_controller.index - 1, is_progress=False)
 
     def on_next_step_clicked(self):
-        """Move replay cursor to next kinematics step."""
+        """Move replay cursor to the next truth step."""
         if not self.simulation_controller:
             return
         if self.simulation_controller.is_playing:

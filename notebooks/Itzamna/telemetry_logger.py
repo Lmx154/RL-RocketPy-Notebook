@@ -1,6 +1,21 @@
+import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
+
+from sim.sitl.session import (
+    BARO_COLUMNS,
+    GPS_COLUMNS,
+    IMU_COLUMNS,
+    MAG_COLUMNS,
+    TRUTH_COLUMNS,
+    build_session_manifest,
+)
+
+TRUTH_SAMPLING_RATE_HZ = 500
 
 
 def _sensor_key(sensor):
@@ -16,6 +31,8 @@ def _sensor_key(sensor):
         return "barometer"
     if "gnss" in class_name or "gnss" in sensor_name or "gps" in sensor_name:
         return "gnss"
+    if "magnetometer" in class_name or "magnetometer" in sensor_name or sensor_name == "mag":
+        return "mag"
     return None
 
 
@@ -41,25 +58,39 @@ def _to_dataframe_from_measured_data(sensor):
 
 
 def _rename_sensor_axes(sensor_name, df):
-    """Rename vector columns to x/y/z for selected sensors in merged export."""
+    """Rename vector columns to canonical per-stream axis names."""
     if df.empty or "time_s" not in df.columns:
         return df
 
+    canonical_sensor_name = "magnetometer" if sensor_name == "mag" else sensor_name
     non_time_cols = [c for c in df.columns if c != "time_s"]
-    if sensor_name in {"accelerometer", "gyroscope", "gnss"} and len(non_time_cols) >= 3:
+    if canonical_sensor_name in {"accelerometer", "gyroscope", "gnss", "magnetometer"} and len(non_time_cols) >= 3:
         axis_map = {
-            non_time_cols[0]: f"{sensor_name}_x",
-            non_time_cols[1]: f"{sensor_name}_y",
-            non_time_cols[2]: f"{sensor_name}_z",
+            non_time_cols[0]: f"{canonical_sensor_name}_x",
+            non_time_cols[1]: f"{canonical_sensor_name}_y",
+            non_time_cols[2]: f"{canonical_sensor_name}_z",
         }
         # Keep extra dimensions if present (e.g., additional GNSS outputs).
         for idx, col in enumerate(non_time_cols[3:], start=4):
-            axis_map[col] = f"{sensor_name}_v{idx}"
+            axis_map[col] = f"{canonical_sensor_name}_v{idx}"
         return df.rename(columns=axis_map)
 
     # Generic naming for scalar or unknown sensor outputs.
-    generic_map = {col: f"{sensor_name}_{col}" for col in non_time_cols}
+    generic_map = {col: f"{canonical_sensor_name}_{col}" for col in non_time_cols}
     return df.rename(columns=generic_map)
+
+
+def _dedupe_frame_on_time(df):
+    """Collapse duplicate timestamps to the last sample for replay compatibility."""
+    if df.empty or "time_s" not in df.columns:
+        return df
+
+    deduped = (
+        df.sort_values("time_s", kind="stable")
+        .drop_duplicates(subset=["time_s"], keep="last")
+        .reset_index(drop=True)
+    )
+    return deduped.loc[:, df.columns.tolist()]
 
 
 def _collect_sensors(flight):
@@ -134,58 +165,241 @@ def _simulation_timestamp(flight):
     return _extract_simulation_datetime(flight).strftime("%y%m%d_%H%M%S")
 
 
-def export_telemetry(flight, logs_dir="../../logs"):
-    """Export exactly two files: source-of-truth kinematics and full-rate merged sensors."""
-    os.makedirs(logs_dir, exist_ok=True)
-    print(f"Exporting logs to: {os.path.abspath(logs_dir)} ...\\n")
+def _utc_timestamp() -> str:
+    """Return the export creation timestamp in UTC ISO-8601 format."""
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-    timestamp = _simulation_timestamp(flight)
-    kinematics_filename = f"flight_kinematics_{timestamp}.csv"
-    merged_filename = f"virtual_sensors_full_rate_{timestamp}.csv"
-    kinematics_path = os.path.join(logs_dir, kinematics_filename)
-    merged_path = os.path.join(logs_dir, merged_filename)
 
-    # Remove legacy per-sensor exports so only two files remain from this logger flow.
-    for filename in os.listdir(logs_dir):
-        if filename.startswith("sensor_") and filename.endswith(".csv"):
-            try:
-                os.remove(os.path.join(logs_dir, filename))
-            except OSError:
-                pass
+def _build_session_directory(logs_dir, session_id):
+    """Return the canonical per-session export directory path."""
+    return Path(logs_dir) / f"session_{session_id}"
 
-    # 1) RocketPy built-in flight kinematics export.
-    try:
-        flight.export_data(kinematics_path)
-        print(f"  Saved source-of-truth flight kinematics -> {kinematics_path}")
-    except Exception as e:
-        print(f"  Warning: could not export flight kinematics: {e}")
 
-    # 2) Build merged full-rate sensor table from measured_data.
-    sensors = _collect_sensors(flight)
-    if not sensors:
-        print("  Warning: no sensors found in flight/rocket.")
-        return
+def _call_flight_series(flight, attribute_name, times_s):
+    """Evaluate one RocketPy flight state callable over the target timeline."""
+    accessor = getattr(flight, attribute_name)
+    return np.array([float(accessor(float(time_s))) for time_s in times_s], dtype=float)
 
-    sensor_frames = {}
 
-    for name, sensor in sensors.items():
-        df = _to_dataframe_from_measured_data(sensor)
-        if not df.empty and "time_s" in df.columns:
-            sensor_frames[name] = _rename_sensor_axes(name, df)
+def _truth_timebase(flight, rate_hz=TRUTH_SAMPLING_RATE_HZ):
+    """Build the canonical uniform truth timeline up to ``flight.t_final``."""
+    dt_s = 1.0 / float(rate_hz)
+    t_final = max(float(getattr(flight, "t_final", 0.0)), 0.0)
+    if t_final <= 0.0:
+        return np.array([0.0], dtype=float)
 
-    # 3) Merge at full resolution: outer join on time union.
+    sample_count = int(np.floor(t_final / dt_s)) + 1
+    times_s = np.arange(sample_count, dtype=float) * dt_s
+    times_s = np.clip(times_s, 0.0, t_final)
+    return np.unique(times_s)
+
+
+def _build_truth_frame(flight):
+    """Sample the RocketPy flight object onto the canonical truth timeline."""
+    times_s = _truth_timebase(flight)
+    truth = pd.DataFrame(
+        {
+            "time_s": times_s,
+            "x_m": _call_flight_series(flight, "x", times_s),
+            "y_m": _call_flight_series(flight, "y", times_s),
+            "z_m": _call_flight_series(flight, "z", times_s),
+            "vx_mps": _call_flight_series(flight, "vx", times_s),
+            "vy_mps": _call_flight_series(flight, "vy", times_s),
+            "vz_mps": _call_flight_series(flight, "vz", times_s),
+            "e0": _call_flight_series(flight, "e0", times_s),
+            "e1": _call_flight_series(flight, "e1", times_s),
+            "e2": _call_flight_series(flight, "e2", times_s),
+            "e3": _call_flight_series(flight, "e3", times_s),
+            "w1_radps": _call_flight_series(flight, "w1", times_s),
+            "w2_radps": _call_flight_series(flight, "w2", times_s),
+            "w3_radps": _call_flight_series(flight, "w3", times_s),
+        }
+    )
+    return truth.loc[:, list(TRUTH_COLUMNS)]
+
+
+def _measurement_frame(sensor, sensor_name):
+    """Convert one RocketPy sensor measured_data payload into canonical columns."""
+    df = _to_dataframe_from_measured_data(sensor)
+    if df.empty or "time_s" not in df.columns:
+        return pd.DataFrame()
+    renamed = _rename_sensor_axes(sensor_name, df)
+    return _dedupe_frame_on_time(renamed)
+
+
+def _merge_frames_on_time(frames, columns):
+    """Outer-join sensor subframes while preserving canonical column order."""
     merged = None
-    for _, frame in sensor_frames.items():
+    for frame in frames:
+        if frame.empty:
+            continue
         if merged is None:
-            merged = frame
+            merged = frame.copy()
         else:
             merged = merged.merge(frame, on="time_s", how="outer")
 
-    if merged is not None and not merged.empty:
-        merged = merged.sort_values("time_s").reset_index(drop=True)
-        merged.to_csv(merged_path, index=False)
-        print(f"  Saved merged full-rate sensors -> {merged_path}")
-    else:
-        print("  Warning: merged full-rate sensor CSV was not created (no sensor samples).")
+    if merged is None or merged.empty:
+        return pd.DataFrame(columns=columns)
 
+    merged = _dedupe_frame_on_time(merged)
+    for column in columns:
+        if column not in merged.columns:
+            merged[column] = np.nan
+    return merged.loc[:, list(columns)]
+
+
+def _first_available_numeric(frame, column):
+    """Return the first finite value from a column, or ``None`` if unavailable."""
+    if column not in frame.columns:
+        return None
+    series = pd.to_numeric(frame[column], errors="coerce").dropna()
+    if series.empty:
+        return None
+    return float(series.iloc[0])
+
+
+def _resolve_reference_latitude_deg(flight, gps_frame):
+    """Resolve session reference latitude from environment or first GPS sample."""
+    env = getattr(flight, "environment", None)
+    latitude = getattr(env, "latitude", None)
+    if latitude is not None:
+        return float(latitude)
+
+    gps_latitude = _first_available_numeric(gps_frame, "gnss_x")
+    if gps_latitude is not None:
+        return gps_latitude
+    return float(getattr(flight, "latitude")(0.0))
+
+
+def _resolve_reference_longitude_deg(flight, gps_frame):
+    """Resolve session reference longitude from environment or first GPS sample."""
+    env = getattr(flight, "environment", None)
+    longitude = getattr(env, "longitude", None)
+    if longitude is not None:
+        return float(longitude)
+
+    gps_longitude = _first_available_numeric(gps_frame, "gnss_y")
+    if gps_longitude is not None:
+        return gps_longitude
+    return float(getattr(flight, "longitude")(0.0))
+
+
+def _resolve_reference_altitude_m(flight, truth_frame):
+    """Resolve session reference altitude from environment or truth start state."""
+    env = getattr(flight, "environment", None)
+    elevation = getattr(env, "elevation", None)
+    if elevation is not None:
+        return float(elevation)
+
+    truth_altitude = _first_available_numeric(truth_frame, "z_m")
+    if truth_altitude is not None:
+        return truth_altitude
+    return float(getattr(flight, "z")(0.0))
+
+
+def _estimate_sea_level_pressure_pa(reference_pressure_pa, reference_altitude_m):
+    """Infer sea-level pressure from one pressure-altitude sample."""
+    altitude_factor = max(1.0 - float(reference_altitude_m) / 44330.0, 1e-6)
+    return float(reference_pressure_pa) / altitude_factor ** 5.255
+
+
+def _resolve_sea_level_pressure_pa(flight, baro_frame, reference_altitude_m):
+    """Resolve sea-level pressure metadata from barometer or environment state."""
+    reference_pressure_pa = _first_available_numeric(baro_frame, "barometer_v1")
+    if reference_pressure_pa is not None:
+        return _estimate_sea_level_pressure_pa(reference_pressure_pa, reference_altitude_m)
+
+    env = getattr(flight, "environment", None)
+    pressure = getattr(env, "pressure", None)
+    if pressure is not None:
+        return float(pressure)
+    return 101325.0
+
+
+def _write_stream_csv(frame, path, columns):
+    """Persist one canonical stream CSV."""
+    frame.loc[:, list(columns)].to_csv(path, index=False)
+
+
+def export_telemetry(flight, logs_dir="../../logs"):
+    """Export one self-contained replay session directory."""
+    logs_path = Path(logs_dir)
+    logs_path.mkdir(parents=True, exist_ok=True)
+    print(f"Exporting logs to: {logs_path.resolve()} ...\\n")
+
+    session_id = _simulation_timestamp(flight)
+    session_dir = _build_session_directory(logs_path, session_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    sensors = _collect_sensors(flight)
+    if not sensors:
+        raise ValueError("No sensors found in flight/rocket; cannot build a replay session.")
+    missing_required = [
+        sensor_key
+        for sensor_key in ("accelerometer", "gyroscope", "barometer", "gnss")
+        if sensor_key not in sensors
+    ]
+    if missing_required:
+        raise ValueError(
+            f"Missing required sensors for session export: {', '.join(missing_required)}"
+        )
+
+    truth_frame = _build_truth_frame(flight)
+    imu_frame = _merge_frames_on_time(
+        [
+            _measurement_frame(sensors["accelerometer"], "accelerometer"),
+            _measurement_frame(sensors["gyroscope"], "gyroscope"),
+        ],
+        IMU_COLUMNS,
+    )
+    baro_frame = _measurement_frame(sensors["barometer"], "barometer").loc[:, list(BARO_COLUMNS)]
+    gps_frame = _measurement_frame(sensors["gnss"], "gnss").loc[:, list(GPS_COLUMNS)]
+
+    optional_streams = []
+    mag_frame = pd.DataFrame(columns=MAG_COLUMNS)
+    if "mag" in sensors:
+        mag_frame = _measurement_frame(sensors["mag"], "mag").loc[:, list(MAG_COLUMNS)]
+        if not mag_frame.empty:
+            optional_streams.append("mag")
+
+    reference_latitude_deg = _resolve_reference_latitude_deg(flight, gps_frame)
+    reference_longitude_deg = _resolve_reference_longitude_deg(flight, gps_frame)
+    reference_altitude_m = _resolve_reference_altitude_m(flight, truth_frame)
+    sea_level_pressure_pa = _resolve_sea_level_pressure_pa(
+        flight,
+        baro_frame,
+        reference_altitude_m,
+    )
+
+    manifest = build_session_manifest(
+        session_id=session_id,
+        vehicle_name=str(getattr(getattr(flight, "rocket", None), "name", "") or "Rocket"),
+        generated_at_utc=_utc_timestamp(),
+        reference_latitude_deg=reference_latitude_deg,
+        reference_longitude_deg=reference_longitude_deg,
+        reference_altitude_m=reference_altitude_m,
+        sea_level_pressure_pa=sea_level_pressure_pa,
+        include_optional_streams=tuple(optional_streams),
+    )
+
+    _write_stream_csv(truth_frame, session_dir / "truth.csv", TRUTH_COLUMNS)
+    _write_stream_csv(imu_frame, session_dir / "imu.csv", IMU_COLUMNS)
+    _write_stream_csv(baro_frame, session_dir / "baro.csv", BARO_COLUMNS)
+    _write_stream_csv(gps_frame, session_dir / "gps.csv", GPS_COLUMNS)
+    if optional_streams:
+        _write_stream_csv(mag_frame, session_dir / "mag.csv", MAG_COLUMNS)
+
+    (session_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2),
+        encoding="utf-8",
+    )
+
+    print(f"  Saved session manifest -> {session_dir / 'manifest.json'}")
+    print(f"  Saved truth stream -> {session_dir / 'truth.csv'}")
+    print(f"  Saved IMU stream -> {session_dir / 'imu.csv'}")
+    print(f"  Saved barometer stream -> {session_dir / 'baro.csv'}")
+    print(f"  Saved GPS stream -> {session_dir / 'gps.csv'}")
+    if optional_streams:
+        print(f"  Saved magnetometer stream -> {session_dir / 'mag.csv'}")
     print("\\nTelemetry export complete.")
+    return session_dir

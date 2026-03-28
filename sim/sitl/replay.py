@@ -1,4 +1,4 @@
-"""Core CSV replay primitives for SITL transports and protocol adapters."""
+"""Replay primitives for session-derived telemetry and offline compatibility views."""
 
 from __future__ import annotations
 
@@ -9,7 +9,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from sim.estimation.adapters.rocketpy_replay import find_latest_telemetry_log
+from .session import (
+    ReplaySession,
+    find_latest_session_manifest,
+    load_replay_session,
+    merge_replay_session_sensors,
+)
 
 
 @dataclass(slots=True)
@@ -98,22 +103,31 @@ class ReplayClock:
 
 
 def load_replay_telemetry(
-    telemetry: str | Path | pd.DataFrame | None,
+    telemetry: ReplaySession | str | Path | pd.DataFrame | None,
     *,
     logs_directory: str | Path,
     time_column: str = "time_s",
 ) -> tuple[pd.DataFrame, Path | None]:
-    """Load replay telemetry from DataFrame, explicit path, or latest logs CSV."""
+    """Load replay telemetry from a session, DataFrame, explicit path, or latest session."""
 
     telemetry_path: Path | None = None
     if telemetry is None:
-        telemetry_path = find_latest_telemetry_log(logs_directory)
-        frame = pd.read_csv(telemetry_path)
+        replay_session = load_replay_session(find_latest_session_manifest(logs_directory))
+        telemetry_path = replay_session.manifest_path
+        frame = merge_replay_session_sensors(replay_session)
+    elif isinstance(telemetry, ReplaySession):
+        telemetry_path = telemetry.manifest_path
+        frame = merge_replay_session_sensors(telemetry)
     elif isinstance(telemetry, pd.DataFrame):
         frame = telemetry.copy()
     else:
         telemetry_path = Path(telemetry)
-        frame = pd.read_csv(telemetry_path)
+        if telemetry_path.is_dir() or telemetry_path.name == "manifest.json":
+            replay_session = load_replay_session(telemetry_path)
+            telemetry_path = replay_session.manifest_path
+            frame = merge_replay_session_sensors(replay_session)
+        else:
+            frame = pd.read_csv(telemetry_path)
 
     if time_column not in frame.columns:
         raise ValueError(f"Telemetry is missing required '{time_column}' column")

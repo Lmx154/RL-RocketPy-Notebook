@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rl-rocketpy-sim.local/sim/sitl/manifest.schema.json",
+  "title": "SITL Session Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "vehicle_name",
+    "generated_at_utc",
+    "reference_latitude_deg",
+    "reference_longitude_deg",
+    "reference_altitude_m",
+    "sea_level_pressure_pa",
+    "streams",
+    "rates_hz"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vehicle_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reference_latitude_deg": {
+      "type": "number",
+      "minimum": -90.0,
+      "maximum": 90.0
+    },
+    "reference_longitude_deg": {
+      "type": "number",
+      "minimum": -180.0,
+      "maximum": 180.0
+    },
+    "reference_altitude_m": {
+      "type": "number"
+    },
+    "sea_level_pressure_pa": {
+      "type": "number",
+      "exclusiveMinimum": 0.0
+    },
+    "streams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truth",
+        "imu",
+        "baro",
+        "gps"
+      ],
+      "properties": {
+        "truth": {
+          "type": "string",
+          "const": "truth.csv"
+        },
+        "imu": {
+          "type": "string",
+          "const": "imu.csv"
+        },
+        "baro": {
+          "type": "string",
+          "const": "baro.csv"
+        },
+        "gps": {
+          "type": "string",
+          "const": "gps.csv"
+        },
+        "mag": {
+          "type": "string",
+          "const": "mag.csv"
+        },
+        "estimator_feedback": {
+          "type": "string",
+          "const": "estimator_feedback.csv"
+        },
+        "device_events": {
+          "type": "string",
+          "const": "device_events.csv"
+        }
+      }
+    },
+    "rates_hz": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truth",
+        "imu",
+        "baro",
+        "gps"
+      ],
+      "properties": {
+        "truth": {
+          "type": "integer",
+          "const": 500
+        },
+        "imu": {
+          "type": "integer",
+          "const": 300
+        },
+        "baro": {
+          "type": "integer",
+          "const": 100
+        },
+        "gps": {
+          "type": "integer",
+          "const": 10
+        },
+        "mag": {
+          "type": "integer",
+          "const": 50
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}
