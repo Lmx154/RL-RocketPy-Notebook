@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QGroupBox, QCheckBox, QTextEdit, QSplitter,
     QFileDialog, QMessageBox, QFrame, QRadioButton, QSlider,
     QScrollArea, QDockWidget, QPlainTextEdit, QComboBox, QLineEdit,
-    QGridLayout, QSpinBox, QSizePolicy
+    QGridLayout, QSpinBox, QSizePolicy, QTabWidget
 )
 from PySide6.QtCore import Qt, Slot, QEvent, QTimer
 from PySide6.QtGui import QFont
@@ -38,7 +38,11 @@ import pyvista as pv
 
 _MAX_MAVLINK_LOG_LINES = 500  # keep last N lines in the output window
 
-from ..rendering.renderer import RocketRenderer
+from ..informatics import (
+    InformaticsContext,
+    InformaticsPlaybackSource,
+    RocketGeometryComponent,
+)
 from ..simulation import CsvReplayController, load_replay_session, quaternion_to_matrix
 from ..simulation.quaternion_utils import interpolate_quaternion
 from ..sitl.estimator_feedback import (
@@ -51,7 +55,9 @@ from ..sitl.mavlink_sitl_service import (
     list_serial_ports,
     serial_support_available,
 )
+from .data_informatics_panel import DataInformaticsPanel
 from .hil_event_overlay import HilEventOverlay
+from .informatics_summary import GeometrySummaryWidget
 from .telemetry_display import TelemetryDisplay
 
 # Suppress VTK warnings that appear during PyVista shutdown
@@ -71,7 +77,14 @@ class RocketViewerApp(QMainWindow):
     - Viewing mesh statistics
     """
     
-    def __init__(self, rocket):
+    def __init__(
+        self,
+        rocket,
+        *,
+        geometry_component: RocketGeometryComponent | None = None,
+        geometry_source_name: str = 'RocketPy configuration',
+        geometry_source_path: str | None = None,
+    ):
         """
         Initialize the Rocket Viewer application.
         
@@ -79,9 +92,15 @@ class RocketViewerApp(QMainWindow):
             rocket: RocketPy Rocket object to load
         """
         super().__init__()
-        
-        self.rocket = rocket
-        self.rocket_renderer = RocketRenderer(self.rocket)
+
+        self.geometry_component = geometry_component or RocketGeometryComponent.from_rocket(
+            rocket,
+            source_name=geometry_source_name,
+            source_path=geometry_source_path,
+        )
+        self.informatics_context = InformaticsContext(self.geometry_component)
+        self.rocket = self.geometry_component.rocket
+        self.rocket_renderer = self.geometry_component.build_renderer()
         
         # Component selection state
         self.component_checkboxes = {}
@@ -131,7 +150,7 @@ class RocketViewerApp(QMainWindow):
     
     def init_ui(self):
         """Initialize the user interface."""
-        self.setWindowTitle('Rocket 3D Viewer')
+        self.setWindowTitle('Rocket Informatics Viewer')
         self.setGeometry(100, 100, 1400, 900)
         
         # Create central widget and main layout
@@ -148,8 +167,8 @@ class RocketViewerApp(QMainWindow):
         left_panel = self.create_control_panel()
         splitter.addWidget(left_panel)
         
-        # Right panel: 3D Viewer
-        right_panel = self.create_viewer_panel()
+        # Right panel: data-focused workspace + 3D replay
+        right_panel = self.create_workspace_tabs()
         splitter.addWidget(right_panel)
 
         splitter.setStretchFactor(0, 0)
@@ -229,10 +248,14 @@ class RocketViewerApp(QMainWindow):
         layout = QVBoxLayout(panel)
         
         # Title
-        title = QLabel('<h2>Rocket 3D Viewer</h2>')
+        title = QLabel('<h2>Rocket Informatics Panel</h2>')
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-        
+
+        self.geometry_summary_widget = GeometrySummaryWidget()
+        self.geometry_summary_widget.update_component(self.geometry_component)
+        layout.addWidget(self.geometry_summary_widget)
+
         # Mode selection
         mode_group = self.create_mode_selection()
         layout.addWidget(mode_group)
@@ -247,10 +270,12 @@ class RocketViewerApp(QMainWindow):
         self.mavlink_controls_group.setVisible(False)
         
         # Object info section
-        info_group = QGroupBox('Rocket Information')
+        info_group = QGroupBox('Vehicle Snapshot')
         info_layout = QVBoxLayout()
-        info_layout.addWidget(QLabel(f'<b>Radius:</b> {self.rocket.radius:.4f} m'))
-        info_layout.addWidget(QLabel(f'<b>Mass:</b> {self.rocket.mass:.2f} kg'))
+        info_layout.addWidget(QLabel(f'<b>Definition:</b> {self.geometry_component.source_name}'))
+        info_layout.addWidget(QLabel(f'<b>Radius:</b> {self.geometry_component.radius_m:.4f} m'))
+        info_layout.addWidget(QLabel(f'<b>Mass:</b> {self.geometry_component.mass_kg:.2f} kg'))
+        info_layout.addWidget(QLabel(f'<b>Length:</b> {self.geometry_component.total_length_m:.3f} m'))
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
@@ -330,7 +355,7 @@ class RocketViewerApp(QMainWindow):
     
     def create_mode_selection(self) -> QGroupBox:
         """Create mode selection radio buttons."""
-        group = QGroupBox('Visualization Mode')
+        group = QGroupBox('Informatics Mode')
         layout = QVBoxLayout()
         
         self.static_mode_radio = QRadioButton('Static Model')
@@ -349,15 +374,10 @@ class RocketViewerApp(QMainWindow):
         """Create simulation control buttons and controls."""
         group = QGroupBox('Simulation Controls')
         layout = QVBoxLayout()
-        
-        # Replay loading
-        self.load_replay_btn = QPushButton('📂 Load Replay Session')
-        self.load_replay_btn.setMinimumHeight(45)
-        self.load_replay_btn.setStyleSheet('font-weight: bold; font-size: 11pt;')
-        self.load_replay_btn.clicked.connect(self.on_load_replay_clicked)
-        layout.addWidget(self.load_replay_btn)
 
-        self.replay_source_label = QLabel('Replay source: not loaded')
+        self.replay_source_label = QLabel(
+            'Load and inspect playback sources from the Data Informatics tab.'
+        )
         self.replay_source_label.setWordWrap(True)
         layout.addWidget(self.replay_source_label)
         
@@ -395,37 +415,37 @@ class RocketViewerApp(QMainWindow):
     
     def create_component_selection(self) -> QGroupBox:
         """Create component selection checkboxes for rocket."""
-        group = QGroupBox('Select Components')
+        group = QGroupBox('Geometry Components')
         layout = QVBoxLayout()
-        
-        # Get available components
-        geometry = self.rocket_renderer.extract_geometry()
-        
-        # Add checkboxes for each component
-        components = [
-            ('Motor', 'motor', geometry.motor is not None),
-            ('Nose Cone', 'nosecone', geometry.nosecone is not None),
-            ('Body Tube', 'body', True),  # Always has body
-            ('Fins', 'fins', geometry.fins is not None),
-            ('Tail', 'tail', geometry.tail is not None),
-        ]
-        
-        for display_name, component_id, available in components:
-            if available:
-                checkbox = QCheckBox(display_name)
-                checkbox.setChecked(True)  # Default: all selected
-                # Store component_id as property to avoid lambda closure issues
-                checkbox.setProperty('component_id', component_id)
-                checkbox.stateChanged.connect(self.on_component_checkbox_changed)
-                self.component_checkboxes[component_id] = checkbox
-                self.selected_components.add(component_id)
-                layout.addWidget(checkbox)
+
+        for component in self.geometry_component.available_components():
+            checkbox = QCheckBox(component.display_name)
+            checkbox.setChecked(True)
+            checkbox.setProperty('component_id', component.component_id)
+            checkbox.stateChanged.connect(self.on_component_checkbox_changed)
+            self.component_checkboxes[component.component_id] = checkbox
+            self.selected_components.add(component.component_id)
+            layout.addWidget(checkbox)
         
         group.setLayout(layout)
         return group
     
+    def create_workspace_tabs(self) -> QWidget:
+        """Create the right-side tab workspace."""
+        tabs = QTabWidget()
+
+        self.data_informatics_panel = DataInformaticsPanel()
+        self.data_informatics_panel.load_requested.connect(self.on_load_replay_clicked)
+        tabs.addTab(self.data_informatics_panel, 'Data Informatics')
+
+        viewer_panel = self.create_viewer_panel()
+        tabs.addTab(viewer_panel, '3D Replay')
+        tabs.setCurrentIndex(0)
+        self.workspace_tabs = tabs
+        return tabs
+
     def create_viewer_panel(self) -> QWidget:
-        """Create the right panel with 3D viewer."""
+        """Create the 3D replay panel."""
         panel = QWidget()
         self.viewer_panel = panel
         layout = QVBoxLayout(panel)
@@ -1028,6 +1048,9 @@ class RocketViewerApp(QMainWindow):
             )
             self.replay_session_dir = replay_session.session_dir
             self.replay_manifest_path = replay_session.manifest_path
+            playback_source = InformaticsPlaybackSource.from_replay_session(replay_session)
+            self.informatics_context = self.informatics_context.with_data_source(playback_source)
+            self.data_informatics_panel.update_source(playback_source)
 
             self.simulation_controller = CsvReplayController(
                 replay_session,
@@ -1046,25 +1069,10 @@ class RocketViewerApp(QMainWindow):
             self.timeline_slider.setMaximum(self.simulation_controller.total_steps - 1)
             self.timeline_slider.setValue(0)
 
-            source_lines = [
-                f'Replay session: {replay_session.session_dir.name}',
-                f'- {replay_session.manifest_path.name}',
-                f'- {replay_session.stream_paths["truth"].name}',
-                f'- {replay_session.stream_paths["imu"].name}',
-                f'- {replay_session.stream_paths["baro"].name}',
-                f'- {replay_session.stream_paths["gps"].name}',
-            ]
-            if "mag" in replay_session.stream_paths:
-                source_lines.append(f'- {replay_session.stream_paths["mag"].name}')
-            if "estimator_feedback" in replay_session.stream_paths:
-                source_lines.append(
-                    f'- {replay_session.stream_paths["estimator_feedback"].name}'
-                )
-            if "device_events" in replay_session.stream_paths:
-                source_lines.append(
-                    f'- {replay_session.stream_paths["device_events"].name}'
-                )
-            self.replay_source_label.setText('\n'.join(source_lines))
+            self.replay_source_label.setText(
+                f'Playback source: {playback_source.display_name} '
+                f'({playback_source.stream_count} streams)'
+            )
 
             self.trajectory_points = []
             self.rocket_actors = {}
@@ -1093,7 +1101,7 @@ class RocketViewerApp(QMainWindow):
             self.render_simulation_frame(self.simulation_controller.get_state_at_index(0))
             self.on_progress_changed(0.0)
             self.statusBar().showMessage(
-                f'Loaded replay session {replay_session.session_dir.name} with '
+                f'Loaded playback source {playback_source.display_name} with '
                 f'{self.simulation_controller.total_steps:,} truth steps'
             )
         except Exception as exc:
@@ -1316,8 +1324,11 @@ class RocketViewerApp(QMainWindow):
             }
         
         # Calculate bounding box based on loaded replay trajectory
-        if self.simulation_controller and self.simulation_controller.total_steps > 0:
-            kinematics = self.simulation_controller.kinematics
+        if (
+            self.informatics_context.data_source is not None
+            and not self.informatics_context.data_source.kinematics_frame.empty
+        ):
+            kinematics = self.informatics_context.data_source.kinematics_frame
             x_vals = kinematics['x_m'].to_numpy(dtype=float)
             y_vals = kinematics['y_m'].to_numpy(dtype=float)
             z_vals = kinematics['z_m'].to_numpy(dtype=float)
@@ -1804,7 +1815,13 @@ class RocketViewerApp(QMainWindow):
         event.accept()
 
 
-def launch_gui(rocket):
+def launch_gui(
+    rocket,
+    *,
+    geometry_component: RocketGeometryComponent | None = None,
+    geometry_source_name: str = 'RocketPy configuration',
+    geometry_source_path: str | None = None,
+):
     """
     Launch the Rocket 3D Viewer application.
     
@@ -1822,7 +1839,12 @@ def launch_gui(rocket):
     except Exception:
         pass
     
-    viewer = RocketViewerApp(rocket=rocket)
+    viewer = RocketViewerApp(
+        rocket=rocket,
+        geometry_component=geometry_component,
+        geometry_source_name=geometry_source_name,
+        geometry_source_path=geometry_source_path,
+    )
     viewer.show()
     
     return app.exec_()

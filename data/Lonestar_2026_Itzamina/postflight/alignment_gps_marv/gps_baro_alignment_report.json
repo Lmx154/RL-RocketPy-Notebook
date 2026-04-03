@@ -1,0 +1,206 @@
+{
+  "gps": {
+    "source_name": "featherweight_gps",
+    "source_path": "/home/luis/Projects/Python/RL-RocketPy-Notebook/data/Lonestar_2026_Itzamina/UTRGV GPS _03-29-2026_08_47_14.csv",
+    "metadata": {
+      "clock_reference": "UNIXTIME",
+      "clock_reference_units": "seconds",
+      "wall_clock_time_reliable": true,
+      "pressure_alignment_ready": false,
+      "gps_present": true,
+      "course_heading_present": true
+    },
+    "streams": {
+      "navigation": {
+        "rows": 407,
+        "columns": [
+          "time_s",
+          "unix_time_s",
+          "utc_time",
+          "gps_altitude_asl_m",
+          "gps_altitude_agl_m",
+          "latitude_deg",
+          "longitude_deg",
+          "satellite_count",
+          "fix_type",
+          "horizontal_speed_mps",
+          "vertical_speed_mps",
+          "course_heading_deg",
+          "battery_v",
+          "distance_ft",
+          "distance_m",
+          "flags",
+          "rssi_dbm",
+          "count_gt_40",
+          "count_gt_32",
+          "count_gt_24"
+        ],
+        "time_start_s": 0.0,
+        "time_end_s": 162.59999990463257,
+        "approx_rate_hz": 9.999985694905718
+      },
+      "events": {
+        "rows": 407,
+        "columns": [
+          "time_s",
+          "launch_detected",
+          "apogee_detected",
+          "landing_detected"
+        ],
+        "time_start_s": 0.0,
+        "time_end_s": 162.59999990463257,
+        "approx_rate_hz": 9.999985694905718
+      }
+    }
+  },
+  "marv": {
+    "source_name": "marv",
+    "source_path": "/home/luis/Projects/Python/RL-RocketPy-Notebook/data/Lonestar_2026_Itzamina/FLGT0023_TRIMMED.CSV",
+    "metadata": {
+      "clock_reference": "sensor sample timestamps",
+      "clock_reference_units": "microseconds",
+      "common_origin_us": 1122161038,
+      "flight_window_isolated": false,
+      "gps_present": false
+    },
+    "streams": {
+      "primary_imu": {
+        "rows": 14837,
+        "columns": [
+          "time_s",
+          "log_time_s",
+          "sample_time_us",
+          "log_time_us",
+          "state",
+          "lagged",
+          "accelerometer_x_mps2",
+          "accelerometer_y_mps2",
+          "accelerometer_z_mps2",
+          "gyroscope_x_rad_s",
+          "gyroscope_y_rad_s",
+          "gyroscope_z_rad_s"
+        ],
+        "time_start_s": 0.045881,
+        "time_end_s": 159.394049,
+        "approx_rate_hz": 92.39582370875107
+      },
+      "aux_imu": {
+        "rows": 14837,
+        "columns": [
+          "time_s",
+          "log_time_s",
+          "sample_time_us",
+          "log_time_us",
+          "state",
+          "lagged",
+          "accelerometer_x_mps2",
+          "accelerometer_y_mps2",
+          "accelerometer_z_mps2",
+          "gyroscope_x_rad_s",
+          "gyroscope_y_rad_s",
+          "gyroscope_z_rad_s"
+        ],
+        "time_start_s": 0.046087,
+        "time_end_s": 159.394249,
+        "approx_rate_hz": 93.42301943195275
+      },
+      "baro": {
+        "rows": 7075,
+        "columns": [
+          "time_s",
+          "log_time_s",
+          "sample_time_us",
+          "log_time_us",
+          "state",
+          "lagged",
+          "pressure_pa",
+          "temperature_c"
+        ],
+        "time_start_s": 0.0,
+        "time_end_s": 159.391169,
+        "approx_rate_hz": 46.77049717038131
+      }
+    }
+  },
+  "alignment": {
+    "offset_s": -2.1649998092651375,
+    "score": 0.9731266311327154,
+    "confidence": 0.0009358890881759548,
+    "strong_match": true,
+    "status": "ok",
+    "can_merge": true,
+    "warnings": [],
+    "altitude_correlation": 0.9987457591684746,
+    "derivative_correlation": 0.9801397155214944,
+    "rmse_m": 45.26102670183907,
+    "scale": 0.9545888594590936,
+    "bias_m": 88.90322958584251,
+    "gps_window": {
+      "start_time_s": 2.1999998092651367,
+      "end_time_s": 160.59999990463257,
+      "duration_s": 158.40000009536743
+    },
+    "marv_overlap_interval": {
+      "start_time_s": 0.034999999999999254,
+      "end_time_s": 158.43500009536743,
+      "duration_s": 158.40000009536743
+    },
+    "top_candidates": [
+      {
+        "offset_s": -2.1649998092651375,
+        "score": 0.9731266311327154,
+        "altitude_correlation": 0.9987457591684746,
+        "derivative_correlation": 0.9801397155214944,
+        "rmse_m": 45.26102670183907,
+        "scale": 0.9545888594590936,
+        "bias_m": 88.90322958584251
+      },
+      {
+        "offset_s": -2.1599998092651376,
+        "score": 0.972984335791898,
+        "altitude_correlation": 0.9987175661221395,
+        "derivative_correlation": 0.9802092671818673,
+        "rmse_m": 45.754832625902345,
+        "scale": 0.9543171115923951,
+        "bias_m": 89.9351300152877
+      },
+      {
+        "offset_s": -2.1699998092651374,
+        "score": 0.9729821874586625,
+        "altitude_correlation": 0.9987736309217158,
+        "derivative_correlation": 0.9795489716323157,
+        "rmse_m": 44.76704047013588,
+        "scale": 0.9548591363584585,
+        "bias_m": 87.87491842540247
+      },
+      {
+        "offset_s": -2.1549998092651377,
+        "score": 0.9728071548994309,
+        "altitude_correlation": 0.9986891224631327,
+        "derivative_correlation": 0.9802148810321208,
+        "rmse_m": 46.24748238865001,
+        "scale": 0.9540496738477456,
+        "bias_m": 90.96045392509295
+      },
+      {
+        "offset_s": -2.1749998092651373,
+        "score": 0.9724972643360835,
+        "altitude_correlation": 0.9988010164974946,
+        "derivative_correlation": 0.9783412364091945,
+        "rmse_m": 44.275747209686465,
+        "scale": 0.955123977136331,
+        "bias_m": 86.85977596017192
+      }
+    ],
+    "search": {
+      "offset_min_s": -2.1999998092651367,
+      "offset_max_s": -1.2088309046325776,
+      "coarse_step_s": 0.05,
+      "refine_step_s": 0.005,
+      "gps_smoothing_window_s": 0.5,
+      "marv_smoothing_window_s": 0.5,
+      "prelaunch_margin_s": 1.0,
+      "postlanding_margin_s": 1.0
+    }
+  }
+}

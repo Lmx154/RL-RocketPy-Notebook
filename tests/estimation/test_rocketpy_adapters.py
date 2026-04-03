@@ -231,6 +231,60 @@ class RocketPyReplayAdapterTests(unittest.TestCase):
         self.assertGreaterEqual(len(caught), 2)
         self.assertTrue(all(issubclass(item.category, DeprecationWarning) for item in caught))
 
+    def test_legacy_log_discovery_materializes_session_compatibility_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            session_dir = _write_test_session(logs_dir)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                latest_sensor_log = find_latest_telemetry_log(logs_dir)
+                matched_sensor_log, matched_kinematics_log = find_latest_matching_log_pair(logs_dir)
+
+            self.assertEqual(latest_sensor_log, matched_sensor_log)
+            self.assertEqual(latest_sensor_log.name, "virtual_sensors_full_rate_260313_190556.csv")
+            self.assertEqual(matched_kinematics_log, logs_dir / "flight_kinematics_260313_190556.csv")
+            self.assertTrue(latest_sensor_log.exists())
+            self.assertTrue(matched_kinematics_log.exists())
+            self.assertEqual(
+                pd.read_csv(latest_sensor_log).columns.tolist(),
+                [
+                    "time_s",
+                    "accelerometer_x",
+                    "accelerometer_y",
+                    "accelerometer_z",
+                    "gyroscope_x",
+                    "gyroscope_y",
+                    "gyroscope_z",
+                    "barometer_v1",
+                    "gnss_x",
+                    "gnss_y",
+                    "gnss_z",
+                ],
+            )
+            self.assertEqual(
+                pd.read_csv(matched_kinematics_log).columns.tolist(),
+                [
+                    "time_s",
+                    "x_m",
+                    "y_m",
+                    "z_m",
+                    "vx_mps",
+                    "vy_mps",
+                    "vz_mps",
+                    "e0",
+                    "e1",
+                    "e2",
+                    "e3",
+                    "w1_radps",
+                    "w2_radps",
+                    "w3_radps",
+                ],
+            )
+            self.assertEqual(session_dir.name, "session_260313_190556")
+            self.assertGreaterEqual(len(caught), 2)
+            self.assertTrue(all(issubclass(item.category, DeprecationWarning) for item in caught))
+
 
 def _write_test_session(logs_dir: Path) -> Path:
     session_dir = logs_dir / "session_260313_190556"

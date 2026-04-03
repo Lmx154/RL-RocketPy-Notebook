@@ -43,6 +43,7 @@ class ItzamnaSessionExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             session_dir = self.telemetry_logger.export_telemetry(flight, logs_dir=temp_dir)
             session_path = Path(session_dir)
+            logs_path = Path(temp_dir)
 
             self.assertTrue((session_path / "manifest.json").exists())
             self.assertTrue((session_path / "truth.csv").exists())
@@ -50,6 +51,8 @@ class ItzamnaSessionExportTests(unittest.TestCase):
             self.assertTrue((session_path / "baro.csv").exists())
             self.assertTrue((session_path / "gps.csv").exists())
             self.assertFalse((session_path / "mag.csv").exists())
+            self.assertTrue((logs_path / "virtual_sensors_full_rate_260313_190556.csv").exists())
+            self.assertTrue((logs_path / "flight_kinematics_260313_190556.csv").exists())
 
             manifest = json.loads((session_path / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["session_id"], "260313_190556")
@@ -114,12 +117,35 @@ class ItzamnaSessionExportTests(unittest.TestCase):
             )
             self.assertEqual(imu["time_s"].round(6).tolist(), [0.0, 0.003333, 0.006667])
 
+            legacy_sensor = pd.read_csv(logs_path / "virtual_sensors_full_rate_260313_190556.csv")
+            self.assertEqual(
+                legacy_sensor.columns.tolist(),
+                [
+                    "time_s",
+                    "accelerometer_x",
+                    "accelerometer_y",
+                    "accelerometer_z",
+                    "gyroscope_x",
+                    "gyroscope_y",
+                    "gyroscope_z",
+                    "barometer_v1",
+                    "gnss_x",
+                    "gnss_y",
+                    "gnss_z",
+                ],
+            )
+
+            legacy_truth = pd.read_csv(logs_path / "flight_kinematics_260313_190556.csv")
+            self.assertEqual(legacy_truth.columns.tolist(), truth.columns.tolist())
+            self.assertEqual(legacy_truth["time_s"].round(6).tolist(), [0.0, 0.002, 0.004])
+
     def test_export_telemetry_writes_optional_mag_stream_when_present(self) -> None:
         flight = _FakeFlight(include_mag=True)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             session_dir = self.telemetry_logger.export_telemetry(flight, logs_dir=temp_dir)
             session_path = Path(session_dir)
+            logs_path = Path(temp_dir)
 
             self.assertTrue((session_path / "mag.csv").exists())
             manifest = json.loads((session_path / "manifest.json").read_text(encoding="utf-8"))
@@ -130,6 +156,27 @@ class ItzamnaSessionExportTests(unittest.TestCase):
             self.assertEqual(
                 mag.columns.tolist(),
                 ["time_s", "magnetometer_x", "magnetometer_y", "magnetometer_z"],
+            )
+
+            legacy_sensor = pd.read_csv(logs_path / "virtual_sensors_full_rate_260313_190556.csv")
+            self.assertEqual(
+                legacy_sensor.columns.tolist(),
+                [
+                    "time_s",
+                    "accelerometer_x",
+                    "accelerometer_y",
+                    "accelerometer_z",
+                    "gyroscope_x",
+                    "gyroscope_y",
+                    "gyroscope_z",
+                    "barometer_v1",
+                    "gnss_x",
+                    "gnss_y",
+                    "gnss_z",
+                    "magnetometer_x",
+                    "magnetometer_y",
+                    "magnetometer_z",
+                ],
             )
 
     def test_export_telemetry_collapses_duplicate_sensor_timestamps(self) -> None:

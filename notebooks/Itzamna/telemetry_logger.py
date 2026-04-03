@@ -321,6 +321,40 @@ def _write_stream_csv(frame, path, columns):
     frame.loc[:, list(columns)].to_csv(path, index=False)
 
 
+def _build_legacy_sensor_frame(imu_frame, baro_frame, gps_frame, mag_frame):
+    """Build the merged sensor CSV expected by older replay consumers."""
+    frames = [imu_frame, baro_frame, gps_frame]
+    columns = [*IMU_COLUMNS, *BARO_COLUMNS[1:], *GPS_COLUMNS[1:]]
+    if not mag_frame.empty:
+        frames.append(mag_frame)
+        columns.extend(MAG_COLUMNS[1:])
+    return _merge_frames_on_time(frames, columns)
+
+
+def _write_legacy_compatibility_logs(
+    *,
+    logs_path,
+    session_id,
+    truth_frame,
+    imu_frame,
+    baro_frame,
+    gps_frame,
+    mag_frame,
+):
+    """Persist compatibility CSVs for stale notebooks and legacy replay helpers."""
+    sensor_frame = _build_legacy_sensor_frame(imu_frame, baro_frame, gps_frame, mag_frame)
+    _write_stream_csv(
+        sensor_frame,
+        logs_path / f"virtual_sensors_full_rate_{session_id}.csv",
+        sensor_frame.columns,
+    )
+    _write_stream_csv(
+        truth_frame,
+        logs_path / f"flight_kinematics_{session_id}.csv",
+        TRUTH_COLUMNS,
+    )
+
+
 def export_telemetry(flight, logs_dir="../../logs"):
     """Export one self-contained replay session directory."""
     logs_path = Path(logs_dir)
@@ -388,6 +422,15 @@ def export_telemetry(flight, logs_dir="../../logs"):
     _write_stream_csv(gps_frame, session_dir / "gps.csv", GPS_COLUMNS)
     if optional_streams:
         _write_stream_csv(mag_frame, session_dir / "mag.csv", MAG_COLUMNS)
+    _write_legacy_compatibility_logs(
+        logs_path=logs_path,
+        session_id=session_id,
+        truth_frame=truth_frame,
+        imu_frame=imu_frame,
+        baro_frame=baro_frame,
+        gps_frame=gps_frame,
+        mag_frame=mag_frame,
+    )
 
     (session_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2),
@@ -401,5 +444,7 @@ def export_telemetry(flight, logs_dir="../../logs"):
     print(f"  Saved GPS stream -> {session_dir / 'gps.csv'}")
     if optional_streams:
         print(f"  Saved magnetometer stream -> {session_dir / 'mag.csv'}")
+    print(f"  Saved legacy merged sensors -> {logs_path / f'virtual_sensors_full_rate_{session_id}.csv'}")
+    print(f"  Saved legacy kinematics -> {logs_path / f'flight_kinematics_{session_id}.csv'}")
     print("\\nTelemetry export complete.")
     return session_dir

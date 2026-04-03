@@ -27,8 +27,10 @@ import pandas as pd
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from rocketpy import Flight
 
-from sim.sitl.replay_session import ReplaySessionScheduler
+from sim.sitl.replay_session import ReplaySessionScheduler, _quaternion_to_euler
 from sim.sitl.session import ReplaySession, load_replay_session as load_manifest_replay_session
+
+from .quaternion_utils import interpolate_quaternion
 
 class SimulationController(QObject):
     """
@@ -381,6 +383,8 @@ KINEMATICS_COLUMNS_14 = [
     'w3_radps',
 ]
 
+_TIME_EPSILON_S = 1e-12
+
 def _extract_float_tokens(text: str) -> list[float]:
     pattern = r'[-+]?\d*\.\d+(?:[eE][-+]?\d+)?|[-+]?\d+(?:[eE][-+]?\d+)?'
     return [float(token) for token in re.findall(pattern, text)]
@@ -452,6 +456,113 @@ def load_kinematics_csv(path: str | Path) -> pd.DataFrame:
     return frame.sort_values('time_s').reset_index(drop=True)
 
 
+def _normalize_quaternion_array(quaternion: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(quaternion))
+    if norm < 1e-12:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    return quaternion / norm
+
+
+def _quaternion_multiply(lhs: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+    w1, x1, y1, z1 = np.asarray(lhs, dtype=float)
+    w2, x2, y2, z2 = np.asarray(rhs, dtype=float)
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ],
+        dtype=float,
+    )
+
+
+def _rotation_vector_to_quaternion(rotation_vector: np.ndarray) -> np.ndarray:
+    angle = float(np.linalg.norm(rotation_vector))
+    if angle < 1e-12:
+        return _normalize_quaternion_array(
+            np.array([1.0, *(0.5 * rotation_vector)], dtype=float)
+        )
+
+    axis = rotation_vector / angle
+    half_angle = 0.5 * angle
+    return np.array(
+        [np.cos(half_angle), *(axis * np.sin(half_angle))],
+        dtype=float,
+    )
+
+
+def _hermite_position_velocity(
+    p0: np.ndarray,
+    v0: np.ndarray,
+    p1: np.ndarray,
+    v1: np.ndarray,
+    dt_s: float,
+    alpha: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    if dt_s <= _TIME_EPSILON_S:
+        position = (1.0 - alpha) * p0 + alpha * p1
+        velocity = (1.0 - alpha) * v0 + alpha * v1
+        return position, velocity
+
+    s = float(np.clip(alpha, 0.0, 1.0))
+    s2 = s * s
+    s3 = s2 * s
+
+    h00 = 2.0 * s3 - 3.0 * s2 + 1.0
+    h10 = s3 - 2.0 * s2 + s
+    h01 = -2.0 * s3 + 3.0 * s2
+    h11 = s3 - s2
+
+    position = (
+        h00 * p0
+        + h10 * dt_s * v0
+        + h01 * p1
+        + h11 * dt_s * v1
+    )
+
+    dh00 = (6.0 * s2 - 6.0 * s) / dt_s
+    dh10 = 3.0 * s2 - 4.0 * s + 1.0
+    dh01 = (-6.0 * s2 + 6.0 * s) / dt_s
+    dh11 = 3.0 * s2 - 2.0 * s
+    velocity = dh00 * p0 + dh10 * v0 + dh01 * p1 + dh11 * v1
+    return position, velocity
+
+
+def _interpolate_body_rates(
+    omega0_rps: np.ndarray,
+    omega1_rps: np.ndarray,
+    alpha: float,
+) -> np.ndarray:
+    return ((1.0 - alpha) * omega0_rps) + (alpha * omega1_rps)
+
+
+def _integrate_quaternion_from_body_rates(
+    q0: np.ndarray,
+    q1: np.ndarray,
+    omega0_rps: np.ndarray,
+    omega1_rps: np.ndarray,
+    dt_s: float,
+    alpha: float,
+) -> np.ndarray:
+    if alpha <= _TIME_EPSILON_S:
+        return _normalize_quaternion_array(q0)
+    if (1.0 - alpha) <= _TIME_EPSILON_S or dt_s <= _TIME_EPSILON_S:
+        return _normalize_quaternion_array(q1)
+
+    partial_dt_s = alpha * dt_s
+    omega_avg_rps = omega0_rps + (0.5 * alpha * (omega1_rps - omega0_rps))
+    delta_q = _rotation_vector_to_quaternion(omega_avg_rps * partial_dt_s)
+    integrated_q = _normalize_quaternion_array(_quaternion_multiply(q0, delta_q))
+
+    # Trust the truth quaternions if the body-rate integration drifts too far.
+    slerp_q = np.asarray(interpolate_quaternion(tuple(q0), tuple(q1), alpha), dtype=float)
+    alignment = abs(float(np.dot(integrated_q, slerp_q)))
+    if alignment < np.cos(np.deg2rad(5.0)):
+        return _normalize_quaternion_array(slerp_q)
+    return integrated_q
+
+
 def load_replay_session(
     *,
     logs_directory: str | Path = 'logs',
@@ -485,6 +596,7 @@ class CsvReplayController(QObject):
         self.scheduler = ReplaySessionScheduler(replay_session)
 
         self.index = 0
+        self.playback_time_s = float(self.scheduler.current_time_s())
         self.is_playing = False
         self.playback_speed = 1.0
 
@@ -494,7 +606,6 @@ class CsvReplayController(QObject):
         self.timer.setInterval(int(self.dt * 1000.0))
         self.timer.timeout.connect(self._update_loop)
         self.last_update_time: float | None = None
-        self.accumulated_time_s = 0.0
 
         if len(self.scheduler.truth) > 1:
             dt_values = np.diff(self.scheduler.truth_times_s)
@@ -516,17 +627,122 @@ class CsvReplayController(QObject):
     def get_state_at_index(self, index: int) -> Dict[str, Any]:
         idx = self._clamp_index(index)
         self.index = idx
-        return self.scheduler.seek_truth_index(idx)
+        state = self.scheduler.seek_truth_index(idx)
+        self.playback_time_s = float(state['time'])
+        return state
 
     def get_state_at_time(self, t: float) -> Dict[str, Any]:
+        target_time_s = float(np.clip(t, 0.0, self.scheduler.t_final_s))
         times = self.scheduler.truth_times_s
-        idx = int(np.searchsorted(times, float(t), side='left'))
-        return self.get_state_at_index(self._clamp_index(idx))
+        idx = int(np.searchsorted(times, target_time_s, side='right')) - 1
+        idx = self._clamp_index(max(0, idx))
+        self.index = idx
+        self.scheduler.seek_truth_index(idx)
+        self.playback_time_s = target_time_s
+        return self._build_interpolated_state(target_time_s)
 
-    def _emit_current(self) -> None:
-        state = self.get_state_at_index(self.index)
+    def _emit_current(self, *, interpolate: bool = False) -> None:
+        if interpolate:
+            state = self._build_interpolated_state(self.playback_time_s)
+        else:
+            state = self.get_state_at_index(self.index)
         self.state_updated.emit(state)
         self.progress_changed.emit(self.get_progress())
+
+    def _advance_scheduler_to_time(self, target_time_s: float) -> None:
+        target_time_s = float(np.clip(target_time_s, 0.0, self.scheduler.t_final_s))
+        times = self.scheduler.truth_times_s
+        while not self.at_end and (times[self.index + 1] <= (target_time_s + _TIME_EPSILON_S)):
+            self.index += 1
+            self.scheduler.advance_one_tick()
+
+    def _build_interpolated_state(self, target_time_s: float) -> Dict[str, Any]:
+        target_time_s = float(np.clip(target_time_s, 0.0, self.scheduler.t_final_s))
+        exact_state = self.scheduler.current_state()
+        current_index = int(self.scheduler.truth_index)
+        times = self.scheduler.truth_times_s
+
+        if current_index >= (self.total_steps - 1):
+            state = dict(exact_state)
+            state['time'] = target_time_s
+            return state
+
+        t0_s = float(times[current_index])
+        t1_s = float(times[current_index + 1])
+        if target_time_s <= (t0_s + _TIME_EPSILON_S):
+            state = dict(exact_state)
+            state['time'] = target_time_s
+            return state
+
+        alpha = float(np.clip((target_time_s - t0_s) / (t1_s - t0_s), 0.0, 1.0))
+        current_row = self.scheduler.truth.iloc[current_index]
+        next_row = self.scheduler.truth.iloc[current_index + 1]
+
+        p0 = current_row[['x_m', 'y_m', 'z_m']].to_numpy(dtype=float)
+        v0 = current_row[['vx_mps', 'vy_mps', 'vz_mps']].to_numpy(dtype=float)
+        p1 = next_row[['x_m', 'y_m', 'z_m']].to_numpy(dtype=float)
+        v1 = next_row[['vx_mps', 'vy_mps', 'vz_mps']].to_numpy(dtype=float)
+        position, velocity = _hermite_position_velocity(
+            p0,
+            v0,
+            p1,
+            v1,
+            t1_s - t0_s,
+            alpha,
+        )
+
+        q0 = current_row[['e0', 'e1', 'e2', 'e3']].to_numpy(dtype=float)
+        q1 = next_row[['e0', 'e1', 'e2', 'e3']].to_numpy(dtype=float)
+        omega0_rps = current_row[['w1_radps', 'w2_radps', 'w3_radps']].to_numpy(dtype=float)
+        omega1_rps = next_row[['w1_radps', 'w2_radps', 'w3_radps']].to_numpy(dtype=float)
+        quaternion = _integrate_quaternion_from_body_rates(
+            q0,
+            q1,
+            omega0_rps,
+            omega1_rps,
+            t1_s - t0_s,
+            alpha,
+        )
+        angular_velocity = _interpolate_body_rates(omega0_rps, omega1_rps, alpha)
+        phi, theta, psi = _quaternion_to_euler(*quaternion.tolist())
+
+        sensors = exact_state.get('sensors', {})
+        gnss_altitude = sensors.get('gnss_z')
+        altitude = float(gnss_altitude) if gnss_altitude is not None else float(position[2])
+
+        state = dict(exact_state)
+        state['time'] = target_time_s
+        state['step_index'] = current_index
+        state['position'] = {
+            'x': float(position[0]),
+            'y': float(position[1]),
+            'z': float(position[2]),
+            'altitude': altitude,
+        }
+        state['quaternion'] = {
+            'e0': float(quaternion[0]),
+            'e1': float(quaternion[1]),
+            'e2': float(quaternion[2]),
+            'e3': float(quaternion[3]),
+        }
+        state['euler'] = {
+            'phi': float(phi),
+            'theta': float(theta),
+            'psi': float(psi),
+        }
+        state['velocity'] = {
+            'vx': float(velocity[0]),
+            'vy': float(velocity[1]),
+            'vz': float(velocity[2]),
+            'speed': float(np.linalg.norm(velocity)),
+            'horizontal_speed': float(np.linalg.norm(velocity[:2])),
+        }
+        state['angular_velocity'] = {
+            'w1': float(angular_velocity[0]),
+            'w2': float(angular_velocity[1]),
+            'w3': float(angular_velocity[2]),
+        }
+        return state
 
     @Slot()
     def _update_loop(self):
@@ -540,23 +756,14 @@ class CsvReplayController(QObject):
             elapsed_s = max(0.0, now - self.last_update_time)
         self.last_update_time = now
 
-        self.accumulated_time_s += elapsed_s * self.playback_speed
-        advanced = False
-        times = self.kinematics['time_s'].to_numpy(dtype=float)
+        self.playback_time_s = min(
+            self.scheduler.t_final_s,
+            self.playback_time_s + (elapsed_s * self.playback_speed),
+        )
+        self._advance_scheduler_to_time(self.playback_time_s)
+        self._emit_current(interpolate=True)
 
-        while not self.at_end:
-            dt_next = float(times[self.index + 1] - times[self.index])
-            if self.accumulated_time_s + 1e-12 < dt_next:
-                break
-            self.accumulated_time_s -= max(dt_next, 0.0)
-            self.index += 1
-            self.scheduler.advance_one_tick()
-            advanced = True
-
-        if advanced:
-            self._emit_current()
-
-        if self.at_end:
+        if self.playback_time_s >= (self.scheduler.t_final_s - _TIME_EPSILON_S):
             self.pause()
 
     def start(self):
@@ -565,10 +772,10 @@ class CsvReplayController(QObject):
         if self.at_end:
             self.index = 0
             self.scheduler.reset()
+            self.playback_time_s = float(self.scheduler.current_time_s())
             self._emit_current()
         self.is_playing = True
         self.last_update_time = time.time()
-        self.accumulated_time_s = 0.0
         self.timer.start()
         self.simulation_started.emit()
 
@@ -586,8 +793,8 @@ class CsvReplayController(QObject):
         self.timer.stop()
         self.index = 0
         self.scheduler.reset()
+        self.playback_time_s = float(self.scheduler.current_time_s())
         self.last_update_time = None
-        self.accumulated_time_s = 0.0
         self._emit_current()
         if was_playing:
             self.simulation_stopped.emit()
@@ -595,7 +802,7 @@ class CsvReplayController(QObject):
     def reset(self):
         self.index = 0
         self.scheduler.reset()
-        self.accumulated_time_s = 0.0
+        self.playback_time_s = float(self.scheduler.current_time_s())
         self._emit_current()
 
     def seek(self, time_or_progress: float, is_progress: bool = False):
@@ -605,21 +812,21 @@ class CsvReplayController(QObject):
         else:
             target = int(time_or_progress)
         self.index = self._clamp_index(target)
-        self.scheduler.seek_truth_index(self.index)
-        self.accumulated_time_s = 0.0
+        state = self.scheduler.seek_truth_index(self.index)
+        self.playback_time_s = float(state['time'])
         self._emit_current()
 
     def set_speed(self, speed: float):
         self.playback_speed = float(np.clip(speed, 0.1, 20.0))
 
     def get_progress(self) -> float:
-        if self.total_steps <= 1:
+        if self.scheduler.t_final_s <= 0.0:
             return 0.0
-        return float(self.index / (self.total_steps - 1))
+        return float(self.playback_time_s / self.scheduler.t_final_s)
 
     def get_time_info(self) -> Dict[str, float]:
         t_final = self.scheduler.t_final_s
-        current_time = self.scheduler.current_time_s()
+        current_time = self.playback_time_s
         return {
             'current_time': current_time,
             't_final': t_final,

@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "session_id": "260328_005912",
+  "vehicle_name": "Rocket",
+  "generated_at_utc": "2026-03-28T05:59:15Z",
+  "reference_latitude_deg": 33.49864099644529,
+  "reference_longitude_deg": -99.3375993124239,
+  "reference_altitude_m": 417.0,
+  "sea_level_pressure_pa": 101366.1568648637,
+  "streams": {
+    "truth": "truth.csv",
+    "imu": "imu.csv",
+    "baro": "baro.csv",
+    "gps": "gps.csv"
+  },
+  "rates_hz": {
+    "truth": 500,
+    "imu": 300,
+    "baro": 100,
+    "gps": 10
+  }
+}

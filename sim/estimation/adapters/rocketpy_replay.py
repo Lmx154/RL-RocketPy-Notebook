@@ -312,10 +312,8 @@ def find_latest_telemetry_log(logs_directory: str | Path) -> Path:
     logs_path = Path(logs_directory)
     candidates = sorted(logs_path.glob("virtual_sensors_full_rate_*.csv"))
     if not candidates:
-        raise FileNotFoundError(
-            f"No telemetry logs found in {logs_path}. Expected files named "
-            "virtual_sensors_full_rate_<timestamp>.csv"
-        )
+        replay_session = _load_latest_session_for_legacy_compat(logs_path)
+        return _materialize_legacy_sensor_log(replay_session, logs_path)
     return candidates[-1]
 
 
@@ -328,10 +326,53 @@ def find_latest_matching_log_pair(logs_directory: str | Path) -> tuple[Path, Opt
         DeprecationWarning,
         stacklevel=2,
     )
-    sensor_log = find_latest_telemetry_log(logs_directory)
+    logs_path = Path(logs_directory)
+    sensor_log = find_latest_telemetry_log(logs_path)
     suffix = sensor_log.stem.removeprefix("virtual_sensors_full_rate_")
     kinematics_log = sensor_log.with_name(f"flight_kinematics_{suffix}.csv")
-    return sensor_log, (kinematics_log if kinematics_log.exists() else None)
+    if kinematics_log.exists():
+        return sensor_log, kinematics_log
+
+    replay_session = _load_latest_session_for_legacy_compat(logs_path)
+    if str(replay_session.manifest.get("session_id", "")) != suffix:
+        return sensor_log, None
+    return sensor_log, _materialize_legacy_kinematics_log(replay_session, logs_path)
+
+
+def _load_latest_session_for_legacy_compat(logs_directory: str | Path) -> ReplaySession:
+    logs_path = Path(logs_directory)
+    try:
+        return load_replay_session(find_latest_session_manifest(logs_path))
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"No telemetry logs found in {logs_path}. Expected files named "
+            "virtual_sensors_full_rate_<timestamp>.csv or a manifest-based "
+            "session directory under logs/session_*/manifest.json"
+        ) from exc
+
+
+def _materialize_legacy_sensor_log(
+    replay_session: ReplaySession,
+    logs_directory: str | Path,
+) -> Path:
+    logs_path = Path(logs_directory)
+    session_id = str(replay_session.manifest["session_id"])
+    legacy_path = logs_path / f"virtual_sensors_full_rate_{session_id}.csv"
+    if not legacy_path.exists():
+        merge_replay_session_sensors(replay_session).to_csv(legacy_path, index=False)
+    return legacy_path
+
+
+def _materialize_legacy_kinematics_log(
+    replay_session: ReplaySession,
+    logs_directory: str | Path,
+) -> Path:
+    logs_path = Path(logs_directory)
+    session_id = str(replay_session.manifest["session_id"])
+    legacy_path = logs_path / f"flight_kinematics_{session_id}.csv"
+    if not legacy_path.exists():
+        replay_session.truth.to_csv(legacy_path, index=False)
+    return legacy_path
 
 
 def _build_layered_navigation_stack(

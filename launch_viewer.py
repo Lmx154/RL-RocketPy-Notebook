@@ -46,8 +46,11 @@ def configure_qt_runtime() -> None:
 def main() -> int:
     configure_qt_runtime()
 
+    repo_root = os.path.dirname(__file__)
+    rocket_config_path = os.path.join(repo_root, "notebooks", "Itzamna", "rocket_config.py")
+
     # Add notebooks/Itzamna to path to import rocket_config
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "notebooks", "Itzamna"))
+    sys.path.insert(0, os.path.join(repo_root, "notebooks", "Itzamna"))
 
     from rocket_config import (
         create_rocket,
@@ -85,7 +88,11 @@ def main() -> int:
 
     # ==================== LAUNCH GUI ====================
     # Launch the viewer with rocket geometry; simulation mode consumes replay kinematics.
-    return launch_gui(rocket)
+    return launch_gui(
+        rocket,
+        geometry_source_name="Itzamna rocket_config.py",
+        geometry_source_path=rocket_config_path,
+    )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
+import numpy as np
 import pandas as pd
 
 from sim.simulation import CsvReplayController
@@ -88,6 +89,71 @@ class CsvReplayControllerTests(unittest.TestCase):
         self.assertEqual(controller.index, 1)
         self.assertAlmostEqual(controller.get_time_info()["current_time"], 0.002)
 
+    def test_controller_interpolates_position_from_truth_velocity(self) -> None:
+        truth = pd.DataFrame(
+            {
+                "time_s": [0.0, 1.0],
+                "x_m": [0.0, 2.0],
+                "y_m": [0.0, 0.0],
+                "z_m": [417.0, 417.0],
+                "vx_mps": [0.0, 4.0],
+                "vy_mps": [0.0, 0.0],
+                "vz_mps": [0.0, 0.0],
+                "e0": [1.0, 1.0],
+                "e1": [0.0, 0.0],
+                "e2": [0.0, 0.0],
+                "e3": [0.0, 0.0],
+                "w1_radps": [0.0, 0.0],
+                "w2_radps": [0.0, 0.0],
+                "w3_radps": [0.0, 0.0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = load_replay_session(
+                _write_custom_session(Path(temp_dir), truth=truth)
+            )
+
+        controller = CsvReplayController(session, update_rate=120.0)
+        state = controller.get_state_at_time(0.5)
+
+        self.assertAlmostEqual(state["time"], 0.5)
+        self.assertAlmostEqual(state["position"]["x"], 0.5, places=6)
+        self.assertAlmostEqual(state["velocity"]["vx"], 2.0, places=6)
+
+    def test_controller_interpolates_attitude_between_truth_rows(self) -> None:
+        quarter_turn = 0.5 ** 0.5
+        truth = pd.DataFrame(
+            {
+                "time_s": [0.0, 1.0],
+                "x_m": [0.0, 0.0],
+                "y_m": [0.0, 0.0],
+                "z_m": [417.0, 417.0],
+                "vx_mps": [0.0, 0.0],
+                "vy_mps": [0.0, 0.0],
+                "vz_mps": [0.0, 0.0],
+                "e0": [1.0, quarter_turn],
+                "e1": [0.0, 0.0],
+                "e2": [0.0, 0.0],
+                "e3": [0.0, quarter_turn],
+                "w1_radps": [0.0, 0.0],
+                "w2_radps": [0.0, 0.0],
+                "w3_radps": [np.pi / 2.0, np.pi / 2.0],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = load_replay_session(
+                _write_custom_session(Path(temp_dir), truth=truth)
+            )
+
+        controller = CsvReplayController(session, update_rate=120.0)
+        state = controller.get_state_at_time(0.5)
+
+        self.assertAlmostEqual(state["quaternion"]["e0"], np.cos(np.pi / 8.0), places=6)
+        self.assertAlmostEqual(state["quaternion"]["e3"], np.sin(np.pi / 8.0), places=6)
+        self.assertAlmostEqual(state["angular_velocity"]["w3"], np.pi / 2.0, places=6)
+
     def test_session_merge_helper_builds_offline_compatibility_frame(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             session = load_replay_session(_write_test_session(Path(temp_dir)))
@@ -114,21 +180,11 @@ class CsvReplayControllerTests(unittest.TestCase):
 
 
 def _write_test_session(logs_dir: Path) -> Path:
-    session_dir = logs_dir / "session_260313_190556"
-    session_dir.mkdir(parents=True, exist_ok=True)
+    return _write_custom_session(logs_dir, truth=_default_truth_frame())
 
-    manifest = build_session_manifest(
-        session_id="260313_190556",
-        vehicle_name="Itzamna",
-        generated_at_utc="2026-03-27T18:45:00Z",
-        reference_latitude_deg=33.4986251,
-        reference_longitude_deg=-99.3376125,
-        reference_altitude_m=417.0,
-        sea_level_pressure_pa=101325.0,
-    )
-    (session_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    pd.DataFrame(
+def _default_truth_frame() -> pd.DataFrame:
+    return pd.DataFrame(
         {
             "time_s": [0.0, 0.002, 0.004],
             "x_m": [0.0, 0.1, 0.2],
@@ -145,7 +201,29 @@ def _write_test_session(logs_dir: Path) -> Path:
             "w2_radps": [0.2, 0.2, 0.2],
             "w3_radps": [0.3, 0.3, 0.3],
         }
-    ).to_csv(session_dir / "truth.csv", index=False)
+    )
+
+
+def _write_custom_session(
+    logs_dir: Path,
+    *,
+    truth: pd.DataFrame,
+) -> Path:
+    session_dir = logs_dir / "session_260313_190556"
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = build_session_manifest(
+        session_id="260313_190556",
+        vehicle_name="Itzamna",
+        generated_at_utc="2026-03-27T18:45:00Z",
+        reference_latitude_deg=33.4986251,
+        reference_longitude_deg=-99.3376125,
+        reference_altitude_m=417.0,
+        sea_level_pressure_pa=101325.0,
+    )
+    (session_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    truth.to_csv(session_dir / "truth.csv", index=False)
 
     pd.DataFrame(
         {
